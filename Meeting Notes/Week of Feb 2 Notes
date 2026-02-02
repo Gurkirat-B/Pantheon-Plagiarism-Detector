@@ -1,6 +1,33 @@
-Week of Feb 2 Notes
+Week of Feb 2 Notes 
+(Feb 2, 2026)
 
-- Book room for Friday (DONE ST503B 12-2 pm)
-- Figure out Front-end / back-end / Engine developers (DONE)
-- Update on the SRS document ()
-- Figure out what UML diagrams we need ()
+- Book a room for Friday and Monday (DONE)
+- Figure out Front-end / Back-end / Engine developers (DONE)
+- Update on the SRS document (DONE)
+- Figure out what UML diagrams we need (DONE)
+- Updated the "Project Group Form" (DONE)
+
+- Talk about what the UI will need (DONE)
+  - Login screen
+        - login/sign up
+  - Main screen
+        - TA view/student view/professor view
+        - list of courses/assignments
+        - Files you have submitted (My submissions)
+  - Submission screen
+        - Dropbox for assignment
+        - button to add file
+        - lets student see the percentage of their assignment comparison 
+        - The prof will have his own folder section for previous assignments 
+  - Added functionality
+        - Calendar
+        - Dark/light mode
+        - allow the professor to make the students see the exact comparison detection of their assignment
+
+- Questions to ask Dave
+      - how the main screen will look like (Multiple courses or one course, like Turnitin?)
+
+------------------------------------------------------------------------------------
+(Feb 6, 2026)
+
+- 
