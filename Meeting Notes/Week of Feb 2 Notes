@@ -26,8 +26,12 @@ Week of Feb 2 Notes
 
 - Questions to ask Dave
       - how the main screen will look like (Multiple courses or one course, like Turnitin?)
-      - Is anyone able to submit a document or just Brock students 
-      - for the Github what do we pay for and do we need it?
+        - Dave responces: There will be multiple keys, which basically means, anyone who uses a fake key doesn't get accepted 
+      - Is anyone able to submit a document, or just Brock students 
+        - Dave responces: Only the instructor can generate a key for the assignment, which allows students to get access. Only people with the key can submit, fake key system rejects it 
+      - For GitHub, what do we pay for, and do we need it?
+        - Dave responces: Not really needed yet, keep using the free version, until we cross that bridge 
+        - Dave responces: No need to comment on any of the code
 
 Next meetings plan (Monday)
   - Finalize SRS document (UML diagrams, hand it in)
