@@ -281,7 +281,43 @@ SELECT
 FROM c
 RETURNING assignment_id, title;
 
+-- 5) Artifact pointing to your S3 ZIP
+-- IMPORTANT: Replace these with your actual S3 bucket + key that already exists.
+INSERT INTO artifacts (
+  s3_bucket, s3_key,
+  original_name, content_type, size_bytes, sha256_hex
+)
+VALUES (
+  'pantheon-submissions',
+  'Submissions/Courses/COSC_4P02/COSC4P80_Project.zip',
+  'COSC4P80_Project.zip',
+  'zip',
+  12345,
+  NULL
+)
+ON CONFLICT (s3_bucket, s3_key) DO UPDATE
+SET original_name = EXCLUDED.original_name
+RETURNING artifact_id, s3_bucket, s3_key;
 
-
-
-
+-- 6) Submission referencing the artifact
+-- Because submissions has UNIQUE(user_id, assignment_id), we UPSERT to keep re-runs easy.
+WITH
+  s AS (SELECT user_id FROM users WHERE email = 'student1@pantheon.local'),
+  a AS (SELECT assignment_id FROM assignments WHERE title = 'A1 - Test Upload' ORDER BY created_at DESC LIMIT 1),
+  art AS (SELECT artifact_id FROM artifacts WHERE s3_bucket = 'pantheon-submissions' AND s3_key = 'Submissions/Courses/COSC_4P02/COSC4P80_Project.zip')
+INSERT INTO submissions (user_id, assignment_id, submitted_at, status, artifact_id, original_zip_name)
+SELECT
+  s.user_id,
+  a.assignment_id,
+  now(),
+  'accepted',
+  art.artifact_id,
+  'test_upload.zip'
+FROM s, a, art
+ON CONFLICT (user_id, assignment_id) DO UPDATE
+SET
+  submitted_at = EXCLUDED.submitted_at,
+  status = EXCLUDED.status,
+  artifact_id = EXCLUDED.artifact_id,
+  original_zip_name = EXCLUDED.original_zip_name
+RETURNING submission_id, user_id, assignment_id, status, artifact_id;
