@@ -1,0 +1,9 @@
+$env:PANTHEON_DB_HOST="pantheon-db.c3eceugucfdv.us-east-2.rds.amazonaws.com"
+$env:PANTHEON_DB_PORT="5432"
+$env:PANTHEON_DB_NAME="Pantheon_db"
+$env:PANTHEON_DB_USER="Pantheon"
+$env:PANTHEON_DB_PASS="pantheon11!"
+$env:PANTHEON_S3_BUCKET="pantheon-submissions"
+$env:PANTHEON_JWT_SECRET="secretkey"
+
+uvicorn main:app --reload --port 8000
