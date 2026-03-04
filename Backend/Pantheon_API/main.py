@@ -1,3 +1,12 @@
+#NECESSARY LIBRARIES:
+#fastapi
+#uvicorn[standard]
+#psycopg[binary]
+#boto3
+#passlib[bcrypt]
+#python-jose[cryptography]
+#python-multipart
+
 from fastapi import FastAPI
 from routes_auth import router as auth_router
 from routes_submissions import router as submissions_router
