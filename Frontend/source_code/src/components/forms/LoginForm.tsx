@@ -17,23 +17,8 @@ import { LoadingButton } from "../LoadingButton";
 import { useState } from "react";
 import { delay } from "@/lib/utils";
 import ToggleFormButton from "./ToggleFormButton";
-
-const email = z
-  .string()
-  .trim()
-  .min(3, "Email must be at least 3 characters.")
-  .email("Please type a valid email.");
-const password = z
-  .string()
-  .min(6, { message: "Password must be at least 6 characters long." })
-  .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
-    message: "Password must contain lowercase, uppercase, and number.",
-  });
-
-const loginFormSchema = z.object({
-  email: email,
-  password: password,
-});
+import { loginFormSchema } from "./formSchema";
+import SignUpForm from "./SignUpForm";
 
 type FormState = "student" | "instructor";
 
@@ -124,7 +109,6 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
             </FormItem>
           )}
         />
-
         <LoadingButton
           loading={loading}
           className="w-full px-10 py-6 text-base capitalize lg:py-7 lg:text-lg"
@@ -132,7 +116,11 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
         >
           Sign In as Instructor
         </LoadingButton>
-
+        <div className="text-base">
+          <p>
+            New User? <SignUpForm />
+          </p>
+        </div>
       </form>
     </Form>
   );
