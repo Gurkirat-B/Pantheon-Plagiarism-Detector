@@ -24,6 +24,11 @@ def register(body: RegisterRequest):
         existing = conn.execute("SELECT user_id FROM users WHERE email = %s", (body.email,)).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Email already registered")
+        
+        roles = {"student", "professor"}
+        if body.role not in roles:
+            raise HTTPException(status_code=400, detail=f"Role must be one of {roles}")
+
         # Insert new user
         row = conn.execute(
             """
