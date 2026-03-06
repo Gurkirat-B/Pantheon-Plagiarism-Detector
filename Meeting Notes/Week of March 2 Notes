@@ -4,3 +4,30 @@ March 2, 2025
 - Talked about progress and things each group needs 
 - Planned group meetings
 - Combining front end / back end / and engine together next week 
+- Worked on backend API calls for frontend 
+- Worked on frontend UI 
+- Started updating the SRS document for phase 2
+
+Pantheon meeting notes March 5th, 2026
+
+Frontend’s needs from Backend and Engine
+* API call for generating Key for each assignment 
+* API for display the assignment and create new ones
+* API for display instructor name
+
+Engine and Backend
+* Compare submitted code with all the codes and then display the one beside with the highest similarity
+* Left side is my assignment and the right side is the highest similarity (only after the deadline)
+* Also display similarity percentage and just the line of codes which are similar and also a couple line of code above and below the similar code
+* How are we generating the keys for assignments or courses?
+
+Question for Dave (client)
+How many submission should be allowed for the students to make?
+
+
+Backend and Engine meeting notes
+
+Engine new requirments
+* we need to exclude the header files and packages from the code base
+* 3 kind of zones for similarity. More than 70%, 40 - 70%, less than 40%
+* “View full code submission” button right below the small window where the the similarity between 2 codes are shown on instructor view
