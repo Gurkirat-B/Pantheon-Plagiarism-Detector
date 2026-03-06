@@ -19,6 +19,7 @@ import { delay } from "@/lib/utils";
 import ToggleFormButton from "./ToggleFormButton";
 import { loginFormSchema } from "./formSchema";
 import SignUpForm from "./SignUpForm";
+import { useRouter } from "next/navigation";
 
 type FormState = "student" | "instructor";
 
@@ -30,6 +31,7 @@ interface LoginFormProps {
 export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const router = useRouter();
   const loginForm = useForm<z.infer<typeof loginFormSchema>>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: {
@@ -43,6 +45,7 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
       setLoading(true);
       toast({ description: "Email: ".concat(values.email as string) });
       await delay(3000);
+      router.push("/dashboard")
     } catch (error) {
       console.error("Form submission error", error);
       toast({
