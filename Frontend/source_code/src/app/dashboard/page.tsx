@@ -47,28 +47,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-
 import { dashboardData, type Course, type Assignment } from "./data";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { formatDate } from "@/lib/utils";
 
 type EditAssignmentForm = {
   code: string;
   title: string;
   dueDate: string;
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "numeric",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-// ─── Assignment Row ───────────────────────────────────────────────────────────
 
 function AssignmentRow({
   assignment,
@@ -179,8 +165,6 @@ function AssignmentRow({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -214,8 +198,6 @@ export default function DashboardPage() {
   });
 
   const selectedCourse = courses.find((c) => c.id === selectedCourseId);
-
-  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleToggleHidden = (courseId: string, assignmentId: string) => {
     setCourses((prev) =>
@@ -316,8 +298,6 @@ export default function DashboardPage() {
     setCreateForm({ code: "", title: "", dueDate: "" });
     setCreateDialogOpen(false);
   };
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 min-[2000px]:max-w-[2000px]">
