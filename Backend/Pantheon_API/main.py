@@ -3,9 +3,11 @@
 #uvicorn[standard]
 #psycopg[binary]
 #boto3
-#passlib[bcrypt]
+#passlib[bcrypt]==1.7.4
+#bcrypt==4.0.1
 #python-jose[cryptography]
 #python-multipart
+#pydantic[email]
 
 from fastapi import FastAPI
 from routes_auth import router as auth_router
