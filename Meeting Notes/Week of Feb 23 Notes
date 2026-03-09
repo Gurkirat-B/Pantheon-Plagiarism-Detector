@@ -4,14 +4,14 @@ Feb 26, 2026 Meeting notes
 - Make group meetings for each section
 - Booked rooms for the next two weeks meetings  
 - Emailing Dave about competitive marking 
-
+- Created the engine blueprint, which is below
 
 Engine Blueprint
 1) Define what “engine” owns vs what the “app” owns
 
 Engine responsibilities (your focus):
 	•	Validate assignment key for submissions (accept/reject).
-	•	Build a canonical representation of each submission:
+	•	Build a representation of each submission:
 	•	concatenate source files
 	•	strip comments
 	•	tokenize (C/C++/Java)
