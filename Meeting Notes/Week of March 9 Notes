@@ -7,3 +7,8 @@ March 9, 2026
 - The documentation guys have started working on the updated SRS for stage 2
 - Went over the current code and talked about the students having their own login vs before students didn't have a login
 - Went over how the engine works and confirmed the student comparison worked
+- Talked about handling edge cases in code comparison (similar structure, different variable names, etc.)
+- Outlined next steps for preparing the system for the upcoming project demonstration
+- Reviewed login workflow and basic authentication requirements for student accounts
+- Confirmed responsibilities between the development team and documentation team for Stage 2 deliverables
+- Planned how the meeting with Dave Bockus will go
