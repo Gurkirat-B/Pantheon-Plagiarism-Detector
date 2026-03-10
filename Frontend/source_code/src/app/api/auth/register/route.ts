@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    console.log(`${process.env.BACKEND_URL}/auth/register`);
     const res = await fetch(`${process.env.BACKEND_URL}/auth/register`, {
       method: "POST",
       headers: {

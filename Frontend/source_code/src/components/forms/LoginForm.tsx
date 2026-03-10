@@ -1,5 +1,4 @@
 "use client";
-import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -30,7 +29,6 @@ interface LoginFormProps {
 
 export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
   const router = useRouter();
   const loginForm = useForm<z.infer<typeof loginFormSchema>>({
     resolver: zodResolver(loginFormSchema),
@@ -40,18 +38,44 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
     },
   });
 
-  async function onSubmit(values: z.infer<typeof loginFormSchema>) {
+  async function onSubmit(data: z.infer<typeof loginFormSchema>) {
+    setLoading(true);
     try {
-      setLoading(true);
-      toast({ description: "Email: ".concat(values.email as string) });
-      await delay(3000);
-      router.push("/dashboard")
-    } catch (error) {
-      console.error("Form submission error", error);
-      toast({
-        variant: "destructive",
-        description: "Failed to submit the form. Please try again.",
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+        }),
       });
+
+      const result = await res.json();
+
+      if (res.status === 401) {
+        loginForm.setError("root", {
+          type: "manual",
+          message: result.message,
+        });
+        return;
+      }
+
+      if (!res.ok) {
+        loginForm.setError("root", {
+          type: "manual",
+          message: result.message,
+        });
+        return;
+      }
+
+      router.push("/dashboard");
+    } catch {
+      loginForm.setError("root", {
+        type: "manual",
+        message: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -112,6 +136,11 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
             </FormItem>
           )}
         />
+        {loginForm.formState.errors.root && (
+          <p className="text-sm text-destructive">
+            {loginForm.formState.errors.root.message}
+          </p>
+        )}
         <LoadingButton
           loading={loading}
           className="w-full px-10 py-6 text-base capitalize lg:py-7 lg:text-lg"
