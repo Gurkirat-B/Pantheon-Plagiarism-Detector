@@ -120,7 +120,6 @@ function AssignmentRow({
           size="sm"
           onClick={onReview}
           className="gap-1.5"
-          disabled={assignment.submissions === 0}
         >
           Review
           <ArrowRight className="h-3.5 w-3.5" />
