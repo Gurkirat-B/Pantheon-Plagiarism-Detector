@@ -43,11 +43,43 @@ export default function SignUpForm() {
   const onSubmit = async (data: SignUpFormValues) => {
     setLoading(true);
     try {
-      await delay(3000);
-      console.log("Sign up data:", data);
-      // handle sign up logic here
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name,
+          email: data.email,
+          password: data.password,
+          role: "professor", // or make this dynamic later
+        }),
+      });
+
+      const result = await res.json();
+
+      if (res.status === 409) {
+        form.setError("email", {
+          type: "manual",
+          message: result.message, // "Email already registered"
+        });
+        return;
+      }
+
+      if (!res.ok) {
+        form.setError("root", {
+          type: "manual",
+          message: result.message,
+        });
+        return;
+      }
+
       setOpen(false);
       form.reset();
+      // optionally: show a success toast here
+    } catch {
+      form.setError("root", {
+        type: "manual",
+        message: "Something went wrong. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -143,6 +175,11 @@ export default function SignUpForm() {
                 </FormItem>
               )}
             />
+            {form.formState.errors.root && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.root.message}
+              </p>
+            )}
             <LoadingButton
               loading={loading}
               className="w-full px-10 py-6 text-base capitalize lg:py-7 lg:text-lg"
