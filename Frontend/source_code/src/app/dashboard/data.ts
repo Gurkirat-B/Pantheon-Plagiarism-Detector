@@ -116,7 +116,7 @@ export const dashboardData: {
           dueDate: "2024-10-15",
           submissions: 15,
           analyzed: 10,
-          hidden: true,
+          hidden: false,
         },
         {
           id: "a8",
