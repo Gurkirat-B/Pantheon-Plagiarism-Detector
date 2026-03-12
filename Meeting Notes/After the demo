@@ -7,6 +7,8 @@ Frontend
 - The code will be COSC 4P02, but the name will be the actual course name for visual purposes 
 - Remove extra settings from assignments api
 - Remove assignments/course/{course_id} api
+- Create a student view to review their submission score after they submit the file
+  - Students will use their submission ID to check their score after (the frontend will create this page)
 
 
 Engine
