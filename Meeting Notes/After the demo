@@ -10,6 +10,7 @@ Frontend
 - Create a student view to review their submission score after they submit the file
   - Students will use their submission ID to check their score after (the frontend will create this page)
 - Adding a verification process to know the person accessing the assignment is actually a student
+  - adding a student login page
 
 
 Engine
