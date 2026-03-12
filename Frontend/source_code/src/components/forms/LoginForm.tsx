@@ -68,6 +68,7 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
       }
 
       router.push("/dashboard");
+      router.refresh();
     } catch {
       loginForm.setError("root", {
         type: "manual",
