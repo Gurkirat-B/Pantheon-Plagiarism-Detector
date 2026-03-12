@@ -71,8 +71,8 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
     }
 
 
-@router.get("/")
-def list_assignments(user: dict = Depends(get_current_user)):
+@router.get("/course/{course_id}")
+def list_assignments_by_course(course_id: UUID, user: dict = Depends(get_current_user)):
     _require_professor(user)
 
     with get_db_connection() as conn:
@@ -80,8 +80,10 @@ def list_assignments(user: dict = Depends(get_current_user)):
             """
             SELECT assignment_id, course_id, title, language, due_date, created_at
             FROM assignments
+            WHERE course_id = %s
             ORDER BY created_at DESC
-            """
+            """,
+            (str(course_id),)
         ).fetchall()
 
     return {
