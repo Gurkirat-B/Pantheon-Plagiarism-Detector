@@ -10,7 +10,8 @@ from config import S3_BUCKET
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 s3 = boto3.client("s3")
 
-@router.post("/assignment_id")
+
+@router.post("/{assignment_id}")
 async def upload_submission(
     assignment_id: UUID,
     file: UploadFile = File(...),
@@ -19,7 +20,7 @@ async def upload_submission(
     # check file type
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are allowed")
-    
+
     # read file bytes
     file_bytes = await file.read()
     size = len(file_bytes)
@@ -54,17 +55,17 @@ async def upload_submission(
             INSERT INTO submissions (user_id, assignment_id, status, artifact_id, original_zip_name)
             VALUES (%s, %s, 'accepted', %s, %s)
             ON CONFLICT (user_id, assignment_id) DO UPDATE
-              SET artifact_id     = EXCLUDED.artifact_id,
+              SET artifact_id       = EXCLUDED.artifact_id,
                   original_zip_name = EXCLUDED.original_zip_name,
-                  submitted_at    = now(),
-                  status          = 'accepted'
+                  submitted_at      = now(),
+                  status            = 'accepted'
             RETURNING submission_id
             """,
             (user['user_id'], str(assignment_id), artifact_row[0], file.filename)
         ).fetchone()
 
         conn.commit()
-    
+
     return {
         "submission_id": str(submission_row[0]),
         "s3_key": s3_key,
