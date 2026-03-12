@@ -5,10 +5,12 @@ Frontend
 - The instructor to compare past assignments 
 - Add api for course change names
 - The code will be COSC 4P02, but the name will be the actual course name for visual purposes 
+- Remove extra settings from assignments api
+- Remove assignments/course/{course_id} api
 
 
 Engine
-- Ability to set up auto-comparisons as submission are made
+- Ability to set up auto-comparisons as submissions are made
 - 
 
 
