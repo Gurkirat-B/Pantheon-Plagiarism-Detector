@@ -1,53 +1,54 @@
-import argparse, json
+"""
+cli/compare.py
+
+Local testing script. Not used by the backend.
+Run from the pantheon_engine_v2 directory:
+    python -m engine.cli.compare --a samples/similar1.java --b samples/similar2.java
+"""
+import argparse
+import json
+import sys
 from pathlib import Path
 
-from engine.ingest.ingest import ingest_to_dir
-from engine.preprocess.canonicalize import canonicalize
-from engine.tokenize.lex import tokenize
-from engine.fingerprint.kgrams import fingerprints, jaccard
-from engine.evidence.evidence import evidence_from_shared
+# add parent to path so engine imports work when run directly
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from engine.api import compare
+
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--a", required=True, help="Path to .zip or source file")
-    ap.add_argument("--b", required=True, help="Path to .zip or source file")
-    ap.add_argument("--lang", default="java", choices=["java","c","cpp","mixed"])
-    ap.add_argument("--k", type=int, default=7)
-    ap.add_argument("--strip-comments", action="store_true")
-    ap.add_argument("--normalize-ids", action="store_true", default=True)
-    ap.add_argument("--normalize-literals", action="store_true", default=True)
+    ap = argparse.ArgumentParser(description="Pantheon engine: compare two submissions")
+    ap.add_argument("--a",       required=True, help="Path to zip or source file")
+    ap.add_argument("--b",       required=True, help="Path to zip or source file")
+    ap.add_argument("--id-a",    default="A",   help="Submission ID for A")
+    ap.add_argument("--id-b",    default="B",   help="Submission ID for B")
+    ap.add_argument("--assign",  default=None,  help="Assignment ID")
+    ap.add_argument("--workdir",     default=None,  help="Working directory (default: temp)")
+    ap.add_argument("--pretty",      action="store_true", help="Pretty-print JSON output")
+    ap.add_argument("--report",      action="store_true", help="Print clean human-readable report")
+    ap.add_argument("--save-report", default=None,  metavar="FILE", help="Save report to a .txt file")
     args = ap.parse_args()
 
-    work = Path(".pantheon_work")
-    work.mkdir(exist_ok=True)
+    result = compare(
+        submission_a_path=args.a,
+        submission_b_path=args.b,
+        submission_a_id=args.id_a,
+        submission_b_id=args.id_b,
+        assignment_id=args.assign,
+        workdir=args.workdir,
+    )
 
-    subA = ingest_to_dir(Path(args.a), work / "A")
-    subB = ingest_to_dir(Path(args.b), work / "B")
+    # --report: print clean human-readable output
+    if args.report or args.save_report:
+        from engine.report import format_report, save_report
+        if args.report:
+            print(format_report(result))
+        if args.save_report:
+            save_report(result, args.save_report)
+    else:
+        indent = 2 if args.pretty else None
+        print(json.dumps(result, indent=indent))
 
-    canA = canonicalize(subA, strip_comments=args.strip_comments)
-    canB = canonicalize(subB, strip_comments=args.strip_comments)
-
-    tokA = tokenize(canA.read_text(encoding="utf-8", errors="ignore"),
-                    lang=args.lang,
-                    normalize_ids=args.normalize_ids,
-                    normalize_literals=args.normalize_literals)
-    tokB = tokenize(canB.read_text(encoding="utf-8", errors="ignore"),
-                    lang=args.lang,
-                    normalize_ids=args.normalize_ids,
-                    normalize_literals=args.normalize_literals)
-
-    fpA = fingerprints(tokA, k=args.k)
-    fpB = fingerprints(tokB, k=args.k)
-    score = jaccard(fpA, fpB)
-
-    evidence = evidence_from_shared(fpA, fpB, tokA, tokB, k=args.k)
-
-    print(json.dumps({
-        "score": round(score, 4),
-        "k": args.k,
-        "lang": args.lang,
-        "evidence": evidence
-    }, indent=2))
 
 if __name__ == "__main__":
     main()
