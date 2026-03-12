@@ -10,6 +10,7 @@ from database import get_db_connection
 from auth import get_current_user
 from config import S3_BUCKET
 from engine import compare as engine_compare
+from format_output import format_report_for_backend
 
 router = APIRouter(prefix="/engine", tags=["engine"])
 s3 = boto3.client("s3")
@@ -141,4 +142,22 @@ def compare_two_submissions(
     result["left_submission_id"] = str(body.submission_a_id)
     result["right_submission_id"] = str(body.submission_b_id)
 
-    return result
+    # Format as human-readable text report
+    formatted_report = format_report_for_backend(result)
+    
+    # Get similarity score as percentage
+    score_decimal = result.get("scores", {}).get("weighted_final", 0.0)
+    score_percentage = f"{round(score_decimal * 100, 1)}%"
+
+    return {
+        "formatted_report": formatted_report,
+        "similarity_score": score_percentage,
+        "similarity_score_decimal": score_decimal,
+        "obfuscation_flags": result.get("obfuscation_flags", []),
+        "assignment_id": result["assignment_id"],
+        "left_submission_id": result["left_submission_id"],
+        "right_submission_id": result["right_submission_id"],
+        "language": result.get("language_detected", "unknown"),
+        "evidence_count": len(result.get("evidence", [])),
+        "raw_data": result,
+    }
