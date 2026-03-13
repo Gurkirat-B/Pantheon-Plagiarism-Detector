@@ -5,6 +5,7 @@ from uuid import UUID
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 
 from database import get_db_connection
 from auth import get_current_user
@@ -137,6 +138,10 @@ def compare_two_submissions(
         # Run engine
         result = engine_compare(zip_a, zip_b)
 
+    # Use short labels in the formatted report; actual UUIDs are exposed separately
+    result["submission_a"] = "A"
+    result["submission_b"] = "B"
+
     # Patch metadata so the response refers to submission ids (more useful than filenames)
     result["assignment_id"] = str(assignment_id)
     result["left_submission_id"] = str(body.submission_a_id)
@@ -144,20 +149,54 @@ def compare_two_submissions(
 
     # Format as human-readable text report
     formatted_report = format_report_for_backend(result)
-    
-    # Get similarity score as percentage
-    score_decimal = result.get("scores", {}).get("weighted_final", 0.0)
-    score_percentage = f"{round(score_decimal * 100, 1)}%"
 
-    return {
-        "formatted_report": formatted_report,
-        "similarity_score": score_percentage,
-        "similarity_score_decimal": score_decimal,
-        "obfuscation_flags": result.get("obfuscation_flags", []),
-        "assignment_id": result["assignment_id"],
-        "left_submission_id": result["left_submission_id"],
-        "right_submission_id": result["right_submission_id"],
-        "language": result.get("language_detected", "unknown"),
-        "evidence_count": len(result.get("evidence", [])),
-        "raw_data": result,
-    }
+    # --- PREVIOUS JSON RESPONSE (commented out — revert by uncommenting below and removing the PlainTextResponse return) ---
+    # score_decimal = result.get("scores", {}).get("weighted_final", 0.0)
+    # score_percentage = f"{round(score_decimal * 100, 1)}%"
+    # flag_labels = {
+    #     "identifier_renaming":  "Variable / identifier renaming detected",
+    #     "loop_type_swap":       "Loop type swap detected (for <> while <> do-while)",
+    #     "literal_substitution": "Constant / literal values substituted",
+    #     "dead_code_insertion":  "Dead code insertion detected",
+    #     "code_reordering":      "Code block reordering detected",
+    #     "switch_to_ifelse":     "Switch <> if-else conversion detected",
+    #     "ternary_to_ifelse":    "Ternary <> if-else conversion detected",
+    #     "exception_wrapping":   "Try-catch exception wrapping added",
+    #     "for_each_to_indexed":  "For-each loop converted to indexed for loop",
+    # }
+    # alterations_detected = [flag_labels.get(f, f) for f in result.get("obfuscation_flags", [])]
+    # matching_sections = []
+    # for block in result.get("evidence", []):
+    #     matching_sections.append({
+    #         "match_strength": block.get("strength", block.get("match_strength", "medium")).upper(),
+    #         "file_a": block.get("file_a", ""),
+    #         "lines_a": block.get("lines_a", []),
+    #         "file_b": block.get("file_b", ""),
+    #         "lines_b": block.get("lines_b", []),
+    #         "code_a": block.get("code_a", ""),
+    #         "code_b": block.get("code_b", ""),
+    #     })
+    # return {
+    #     "formatted_report": formatted_report,
+    #     "similarity_score": score_percentage,
+    #     "alterations_detected": alterations_detected,
+    #     "assignment_id": result["assignment_id"],
+    #     "left_submission_id": result["left_submission_id"],
+    #     "right_submission_id": result["right_submission_id"],
+    #     "language": result.get("language_detected", "unknown"),
+    #     "matching_sections": matching_sections,
+    # }
+
+    '''
+    FUTURE — Full Submission View (add these fields to the return dict above when frontend is ready):
+        "source_code_a": result.get("source_code_a", ""),
+        "source_code_b": result.get("source_code_b", ""),
+        "line_mapping":   result.get("line_mapping", []),
+        "line_mapping_b": result.get("line_mapping_b", []),
+    source_code_a / source_code_b -> full text of each submission, split by \n and render line by line.
+    line_mapping  -> flagged lines for submission A: [{ line_a, line_b, color, score, match_count }, ...]
+    line_mapping_b -> same for submission B lines.
+    Frontend builds a { line_number: color } lookup from the mapping, colors flagged lines, leaves rest white.
+    '''
+
+    return PlainTextResponse(content=formatted_report)

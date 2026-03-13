@@ -168,25 +168,183 @@ def _detect_file_lang(path: Path) -> str:
     return mapping.get(ext, "mixed")
 
 
+def _normalize_switch_to_ifelse(text: str) -> str:
+    """
+    Convert switch(EXPR) { case VAL: ...; break; ... default: ...; }
+    to an equivalent if / else-if / else chain.
+
+    Processes the text line-by-line with brace-depth tracking so it handles
+    multi-line cases, nested blocks, and both brace styles:
+        switch(x) {        ← brace on same line
+        switch(x)          ← brace on next line
+        {
+
+    Assumptions (safe for typical student code):
+      - Each case ends with a `break;` (no fall-through across cases)
+      - Case values are simple literals or identifiers
+      - No gotos or labelled breaks inside the switch body
+    """
+    lines = text.split('\n')
+    result = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        m = re.match(r'^(\s*)switch\s*\(\s*(.*?)\s*\)\s*\{?\s*$', line)
+        if not m:
+            result.append(line)
+            i += 1
+            continue
+
+        indent      = m.group(1)
+        switch_expr = m.group(2)
+        i += 1
+
+        # Consume standalone opening brace if not on the switch line
+        if '{' not in line:
+            while i < len(lines):
+                s = lines[i].strip()
+                i += 1
+                if s == '{':
+                    break
+                if s:          # unexpected non-blank before '{' — abort
+                    result.append(line)
+                    i -= 1     # re-process from here
+                    break
+
+        # ── Parse switch body ────────────────────────────────────────────────
+        cases: list = []       # [(value_str | None, [stmt_str, ...])]
+        cur_val   = '__NONE__' # sentinel: not yet inside a case clause
+        cur_stmts: list = []
+        depth = 1              # we already consumed the opening '{'
+
+        while i < len(lines) and depth > 0:
+            ln = lines[i]
+            s  = ln.strip()
+            i += 1
+
+            opens  = s.count('{')
+            closes = s.count('}')
+
+            # Closing brace(s) — check whether this ends the switch
+            if closes and depth - closes <= 0:
+                if cur_val != '__NONE__':
+                    cases.append((cur_val, cur_stmts[:]))
+                depth = 0
+                break
+
+            depth += opens - closes
+
+            # Only interpret case/default/break at switch's direct depth
+            if depth != 1:
+                if cur_val != '__NONE__':
+                    cur_stmts.append(s)
+                continue
+
+            cm = re.match(r'^case\s+(.*?)\s*:(.*)', s)
+            dm = re.match(r'^default\s*:(.*)',      s)
+
+            if cm:
+                if cur_val != '__NONE__':
+                    cases.append((cur_val, cur_stmts[:]))
+                cur_val   = cm.group(1).strip()
+                cur_stmts = []
+                rest = re.sub(r'\s*break\s*;?\s*$', '', cm.group(2)).strip()
+                if rest:
+                    cur_stmts.append(rest)
+
+            elif dm:
+                if cur_val != '__NONE__':
+                    cases.append((cur_val, cur_stmts[:]))
+                cur_val   = None   # None → default clause
+                cur_stmts = []
+                rest = re.sub(r'\s*break\s*;?\s*$', '', dm.group(1)).strip()
+                if rest:
+                    cur_stmts.append(rest)
+
+            elif s in ('break;', 'break ;', 'break'):
+                pass   # already stripped; skip the sentinel line
+
+            elif s not in ('{', '}', ''):
+                if cur_val != '__NONE__':
+                    clean = re.sub(r'\s*break\s*;?\s*$', '', s).strip()
+                    if clean:
+                        cur_stmts.append(clean)
+
+        # ── Emit if / else-if / else chain ───────────────────────────────────
+        if not cases:          # parse failed — emit original switch line untouched
+            result.append(line)
+            continue
+
+        for idx, (val, stmts) in enumerate(cases):
+            if val is not None:
+                kw = 'if' if idx == 0 else 'else if'
+                result.append(f'{indent}{kw} ({switch_expr} == {val}) {{')
+            else:
+                result.append(f'{indent}else {{')
+            for stmt in stmts:
+                result.append(f'{indent}    {stmt}')
+            result.append(f'{indent}}}')
+
+    return '\n'.join(result)
+
+
 def _normalize_control_flow(text: str, lang: str) -> str:
     """
     Normalize equivalent control flow patterns so they produce the same tokens.
 
-    1. Ternary → if/else (so `x = a > b ? a : b` matches `if(a>b) x=a; else x=b;`)
-       We don't literally rewrite — we normalize the ternary OPERATOR to
-       a canonical marker that the tokenizer will treat equivalently.
-
-    2. Simple return patterns:
-       `if(x) return true; else return false;` → `return x;`
-       `if(!x) return false; else return true;` → `return x;`
-
-    3. Normalize for-each / enhanced-for to canonical form (Java)
-       This is a token-level concern handled by the tokenizer.
-
-    4. Normalize `switch` to if-else chain (simple replacement at text level
-       is too fragile — this is better done at token level in lex.py).
+    1. Switch → if-else chain  (handles switch↔if-else obfuscation at text level)
+    2. Ternary → if/else
+    3. Redundant boolean returns / assignments
+    4. Null-comparison canonicalisation
+    5. Increment/decrement normalisation (i++ → i += 1)
     """
     lang = (lang or "mixed").lower()
+
+    # --- switch → if-else (C, C++, Java) ---
+    if lang in ("c", "cpp", "c_or_cpp", "java", "csharp", "javascript",
+                "typescript", "mixed"):
+        text = _normalize_switch_to_ifelse(text)
+
+    # --- normalize increment/decrement variants ---
+    # `i++` / `++i` / `i += 1` all mean the same thing — normalize to `i += 1`
+    # so for-loop headers like `for(i=0; i<n; i++)` vs `for(i=0; i<n; i=i+1)`
+    # produce the same token sequence. Only safe for the standalone ++;/--; form
+    # and for-loop third clause (before ')' ).
+    text = re.sub(r'(\w+)\s*\+\+', r'\1 += 1', text)
+    text = re.sub(r'\+\+\s*(\w+)', r'\1 += 1', text)
+    text = re.sub(r'(\w+)\s*--',   r'\1 -= 1', text)
+    text = re.sub(r'--\s*(\w+)',   r'\1 -= 1', text)
+
+    # --- normalize ternary boolean: `(COND) ? true : false` → `(COND)` ---
+    # so it matches `return COND;` produced by the if-else normalizer below
+    text = re.sub(
+        r"\(([^()]+)\)\s*\?\s*true\s*:\s*false",
+        r"(\1)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\(([^()]+)\)\s*\?\s*false\s*:\s*true",
+        r"!(\1)",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # --- normalize `return (COND) ? A : B;` → `if (COND) { return A; } else { return B; }` ---
+    # handles the most common student copy pattern: ternary return rewritten as if-else
+    text = re.sub(
+        r"return\s+\(([^()]+)\)\s*\?\s*([^:;\n]+?)\s*:\s*([^;\n]+?)\s*;",
+        r"if (\1) { return \2; } else { return \3; }",
+        text,
+    )
+    # handle without parens around condition: `return SIMPLE_COND ? A : B;`
+    text = re.sub(
+        r"return\s+([\w\s.<>=!&|]+?)\s*\?\s*([^:;\n]+?)\s*:\s*([^;\n]+?)\s*;",
+        r"if (\1) { return \2; } else { return \3; }",
+        text,
+    )
 
     # --- normalize redundant boolean returns ---
     # `if (COND) return true; else return false;` → `return COND;`
@@ -197,6 +355,17 @@ def _normalize_control_flow(text: str, lang: str) -> str:
     )
     text = re.sub(
         r"if\s*\(([^)]+)\)\s*return\s+false\s*;\s*else\s+return\s+true\s*;",
+        r"return !(\1);",
+        text,
+    )
+    # normalize if-else return blocks with braces (converted from ternary)
+    text = re.sub(
+        r"if\s*\(([^)]+)\)\s*\{\s*return\s+true\s*;\s*\}\s*else\s*\{\s*return\s+false\s*;\s*\}",
+        r"return \1;",
+        text,
+    )
+    text = re.sub(
+        r"if\s*\(([^)]+)\)\s*\{\s*return\s+false\s*;\s*\}\s*else\s*\{\s*return\s+true\s*;\s*\}",
         r"return !(\1);",
         text,
     )

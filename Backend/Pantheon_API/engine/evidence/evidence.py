@@ -177,19 +177,32 @@ def build_evidence(
         lb1 = orig_b1 or b1
         lb2 = orig_b2 or b2
 
-        # Use canonical text if available (has comments stripped)
-        # Otherwise fall back to original source files
-        if canonical_lines_a is not None:
+        # Always show ORIGINAL source code (before normalization) so professors
+        # see the actual student code, not the canonicalized form.
+        # Only fall back to canonical text if the original file cannot be loaded.
+        src_lines_a = get_lines(work_dir_a, file_a) if work_dir_a else []
+        if src_lines_a:
+            code_a = _slice_code(src_lines_a, la1, la2)
+        elif canonical_lines_a is not None:
             code_a = "\n".join(canonical_lines_a[a1-1:a2]) if a1 <= len(canonical_lines_a) else ""
         else:
-            src_lines_a = get_lines(work_dir_a, file_a)
-            code_a = _slice_code(src_lines_a, la1, la2)
+            code_a = ""
 
-        if canonical_lines_b is not None:
+        src_lines_b = get_lines(work_dir_b, file_b) if work_dir_b else []
+        if src_lines_b:
+            code_b = _slice_code(src_lines_b, lb1, lb2)
+        elif canonical_lines_b is not None:
             code_b = "\n".join(canonical_lines_b[b1-1:b2]) if b1 <= len(canonical_lines_b) else ""
         else:
-            src_lines_b = get_lines(work_dir_b, file_b)
-            code_b = _slice_code(src_lines_b, lb1, lb2)
+            code_b = ""
+
+        # Skip trivial matches where either side spans fewer than 2 lines.
+        # These are k-gram artifacts — an isolated bracket or blank line
+        # happening to match. Not meaningful evidence to show.
+        a_span = la2 - la1
+        b_span = lb2 - lb1
+        if a_span < 2 or b_span < 2:
+            continue
 
         # rough token count for this block
         token_count = (a2 - a1 + 1) * 3  # ~3 tokens per line average estimate

@@ -35,6 +35,7 @@ from engine.version import ENGINE_VERSION
 from engine.exceptions import EngineError
 from engine.ingest.ingest import ingest_to_dir
 from engine.preprocess.canonicalize import canonicalize
+from engine.preprocess.stdlib_filter import blank_output_boilerplate
 from engine.tokenize.lex import tokenize
 from engine.fingerprint.kgrams import winnow
 from engine.similarity.scores import weighted_score
@@ -59,13 +60,18 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
 
     canon = canonicalize(source_files, work_dir, lang=lang)
 
+    # fp_text: canonical text with output/IO/main boilerplate lines blanked out
+    # (same line count as canonical_text so token.line numbers stay aligned).
+    # Used exclusively for tokenisation and fingerprinting — never displayed.
+    fp_text = blank_output_boilerplate(canon.canonical_text, lang)
+
     # normalized tokens (IDs → "ID", literals → "NUM"/"STR"/"CHR", access modifiers stripped)
-    tok_norm = tokenize(canon.canonical_text, lang=lang,
+    tok_norm = tokenize(fp_text, lang=lang,
                         normalize_ids=True, normalize_literals=True,
                         normalize_access=True)
 
     # raw tokens (keep actual names) — used for obfuscation detection
-    tok_raw = tokenize(canon.canonical_text, lang=lang,
+    tok_raw = tokenize(fp_text, lang=lang,
                        normalize_ids=False, normalize_literals=False,
                        normalize_access=False)
 
@@ -152,7 +158,7 @@ def compare(
             fp_b_norm=fp_b,
         )
 
-        # Calculate line-level similarity for HTML visualization
+        # Calculate line-level similarity for HTML visualization (both directions)
         line_similarity_a = calculate_line_similarity(
             tokens_a=proc_a["tok_norm"],
             tokens_b=proc_b["tok_norm"],
@@ -160,11 +166,23 @@ def compare(
             fp_b=fp_b,
             k=_K,
         )
-        
+        line_similarity_b = calculate_line_similarity(
+            tokens_a=proc_b["tok_norm"],
+            tokens_b=proc_a["tok_norm"],
+            fp_a=fp_b,
+            fp_b=fp_a,
+            k=_K,
+        )
+
         line_mapping = build_line_mapping(
             tokens_a=proc_a["tok_norm"],
             tokens_b=proc_b["tok_norm"],
             line_similarity_a=line_similarity_a,
+        )
+        line_mapping_b = build_line_mapping(
+            tokens_a=proc_b["tok_norm"],
+            tokens_b=proc_a["tok_norm"],
+            line_similarity_a=line_similarity_b,
         )
         
         # Get full source code from canonical text
@@ -191,6 +209,7 @@ def compare(
             "source_code_a":     source_code_a,
             "source_code_b":     source_code_b,
             "line_mapping":      line_mapping,
+            "line_mapping_b":    line_mapping_b,
             "source_with_mapping": source_with_mapping,
         }
 

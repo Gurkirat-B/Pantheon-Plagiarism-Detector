@@ -23,8 +23,28 @@ _java_annotation_boilerplate_re = re.compile(
     re.MULTILINE,
 )
 
+# System.out.* and System.err.* output calls — every Java student uses these;
+# they don't reflect algorithm logic and create false-positive k-gram matches.
+# Matches single-line calls: System.out.println(...); / System.err.print(...); etc.
+_java_sysout_re = re.compile(
+    r"^\s*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(.*\)\s*;\s*$",
+    re.MULTILINE,
+)
+
+# public static void main(String[] args) { — identical in every Java program.
+# Strips the declaration line; body tokens are preserved (students may put logic there).
+_java_main_re = re.compile(
+    r"^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?void\s+main\s*"
+    r"\(\s*String\s*(?:\[\s*\]|\[\s*\])\s*\w*\s*\)"
+    r"\s*(?:throws\s+[\w\s,]+?)?\s*\{?\s*$",
+    re.MULTILINE,
+)
+
 
 def filter_java_boilerplate(text: str) -> str:
+    # NOTE: _java_sysout_re and _java_main_re are intentionally NOT applied here.
+    # These lines are kept in the canonical (display) text so they appear in the
+    # HTML report. They are blanked for fingerprinting only via blank_output_boilerplate().
     text = _java_package_re.sub("", text)
     text = _java_annotation_boilerplate_re.sub("", text)
 
@@ -76,8 +96,39 @@ _c_define_guard_re = re.compile(
     re.MULTILINE,
 )
 
+# printf/scanf/puts/gets and related C stdio output/input calls (single-line).
+# These are universal output boilerplate — not algorithm logic.
+_c_stdio_call_re = re.compile(
+    r"^\s*(?:printf|fprintf|sprintf|snprintf|scanf|fscanf|sscanf|"
+    r"puts|fputs|gets|fgets|perror|putchar|putc|getchar|getc)\s*\(.*\)\s*;\s*$",
+    re.MULTILINE,
+)
+
+# C++ stream I/O: cout << ... ; / cin >> ... ; / cerr << ... ;
+# Using std:: prefix or bare name. Single-line statements.
+_cpp_stream_re = re.compile(
+    r"^\s*(?:std\s*::\s*)?(?:cout|cin|cerr|clog)\s*(?:<<|>>).*;\s*$",
+    re.MULTILINE,
+)
+
+# using namespace std; — boilerplate in virtually every C++ student program
+_cpp_using_ns_re = re.compile(
+    r"^\s*using\s+namespace\s+\w+\s*;\s*$",
+    re.MULTILINE,
+)
+
+# int main(...) / void main(...) declaration line
+# Covers: main(), main(void), main(int argc, char* argv[]), etc.
+_c_main_re = re.compile(
+    r"^\s*(?:int|void)\s+main\s*\([^{;]*\)\s*\{?\s*$",
+    re.MULTILINE,
+)
+
 
 def filter_c_boilerplate(text: str) -> str:
+    # NOTE: stdio calls, stream I/O, and main() are intentionally NOT stripped here.
+    # They are kept in the canonical (display) text and blanked for fingerprinting
+    # only via blank_output_boilerplate().
     def _should_strip_include(match):
         header = match.group(1).strip()
         bare = header.split("/")[-1]
@@ -179,4 +230,48 @@ def filter_boilerplate(text: str, lang: str) -> str:
     text = filter_c_boilerplate(text)
     text = filter_python_boilerplate(text)
     text = filter_js_boilerplate(text)
+    return text
+
+
+# ─── Fingerprint-only boilerplate blanker ───────────────────────────
+
+def blank_output_boilerplate(text: str, lang: str) -> str:
+    """
+    Replace universal output/IO/main boilerplate lines with empty lines,
+    PRESERVING LINE COUNT so that token.line numbers stay aligned with the
+    original canonical_text used for HTML display.
+
+    Called AFTER canonicalize() on the canonical_text.  The result (fp_text)
+    is used exclusively for tokenisation and fingerprinting — never displayed.
+
+    Why blank instead of delete:
+        re.MULTILINE  ^...$  matches line content but NOT the trailing \\n.
+        So sub("", ...) leaves a bare \\n, turning the line empty rather than
+        removing it.  This keeps every subsequent line at the same line number
+        as in canonical_text, so highlight positions in the HTML stay correct.
+
+    Covers:
+        Java  — System.out.* / System.err.* calls, main() declaration
+        C     — printf / scanf / puts / gets / fprintf family
+        C++   — cout / cin / cerr stream statements, using namespace std;
+        C/C++ — int main(...) / void main(...) declaration
+    """
+    lang = (lang or "mixed").lower()
+
+    if lang == "java":
+        text = _java_sysout_re.sub("", text)
+        text = _java_main_re.sub("", text)
+    elif lang in ("c", "cpp", "c_or_cpp"):
+        text = _c_stdio_call_re.sub("", text)
+        text = _cpp_stream_re.sub("", text)
+        text = _cpp_using_ns_re.sub("", text)
+        text = _c_main_re.sub("", text)
+    elif lang == "mixed":
+        text = _java_sysout_re.sub("", text)
+        text = _java_main_re.sub("", text)
+        text = _c_stdio_call_re.sub("", text)
+        text = _cpp_stream_re.sub("", text)
+        text = _cpp_using_ns_re.sub("", text)
+        text = _c_main_re.sub("", text)
+    # python / javascript / typescript — no output-boilerplate blanking needed
     return text

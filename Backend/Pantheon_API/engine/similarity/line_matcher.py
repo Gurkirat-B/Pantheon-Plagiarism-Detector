@@ -34,68 +34,80 @@ def calculate_line_similarity(
     """
     Calculate per-line similarity scores by analyzing which k-grams
     on each line are shared between submissions.
-    
+
+    Score formula:
+        shared_fingerprints_on_line / total_fingerprints_on_line_in_fp_a
+
+    This correctly handles the case where one submission has a single compact
+    line (e.g. ternary expression) and the other spreads the same logic across
+    multiple lines (e.g. if-else expansion). Using ALL of fp_a as the denominator
+    avoids the "always 1.0" trap that appears when using only shared hashes.
+
     Returns:
-        Dict mapping line numbers to similarity info:
-        {
-            "line_5": {"score": 0.92, "matches": 3, "shared_grams": [hash1, hash2, ...]},
-            "line_6": {"score": 0.45, "matches": 1, "shared_grams": [hash3]},
-            ...
-        }
+        Dict mapping line numbers (in A) to similarity info.
     """
     shared_hashes = set(fp_a.keys()) & set(fp_b.keys())
     if not shared_hashes:
         return {}
-    
-    # Map which lines have which shared fingerprints
-    line_a_hashes: Dict[int, List[int]] = {}  # line -> [shared hash indices]
-    line_b_hashes: Dict[int, List[int]] = {}
-    
-    # For submission A: which shared hashes appear on which lines?
+
+    # --- denominator: all fp_a k-grams per line (whether shared or not) ---
+    line_a_total: Dict[int, int] = {}  # line → count of all winnowed k-grams starting here
+    for hash_val, positions in fp_a.items():
+        for token_idx in positions:
+            if token_idx < len(tokens_a):
+                line = tokens_a[token_idx].line
+                line_a_total[line] = line_a_total.get(line, 0) + 1
+
+    # --- numerator: shared k-grams per line in A ---
+    line_a_shared: Dict[int, List[int]] = {}  # line → [shared hash values]
     for hash_val in shared_hashes:
         for token_idx in fp_a[hash_val]:
             if token_idx < len(tokens_a):
                 line = tokens_a[token_idx].line
-                if line not in line_a_hashes:
-                    line_a_hashes[line] = []
-                line_a_hashes[line].append(hash_val)
-    
-    # For submission B
+                if line not in line_a_shared:
+                    line_a_shared[line] = []
+                line_a_shared[line].append(hash_val)
+
+    # --- for finding best_match_line: shared k-grams per line in B ---
+    line_b_shared: Dict[int, List[int]] = {}
     for hash_val in shared_hashes:
         for token_idx in fp_b[hash_val]:
             if token_idx < len(tokens_b):
                 line = tokens_b[token_idx].line
-                if line not in line_b_hashes:
-                    line_b_hashes[line] = []
-                line_b_hashes[line].append(hash_val)
-    
-    # Now calculate similarity for each line in A
+                if line not in line_b_shared:
+                    line_b_shared[line] = []
+                line_b_shared[line].append(hash_val)
+
+    # --- compute per-line score ---
     line_similarity_a: Dict[int, Dict] = {}
-    
-    for line_a, shared_on_line_a in line_a_hashes.items():
-        # Count how many of A's shared hashes appear on each line of B
+
+    for line_a, shared_on_line in line_a_shared.items():
+        shared_set = set(shared_on_line)
+        total_on_line = line_a_total.get(line_a, 1)
+
+        # fraction of this line's fingerprints that are shared with B
+        score = len(shared_set) / total_on_line
+
+        # best single B line (for visual arrow connection in the report)
         best_match_line = None
         best_match_count = 0
-        best_match_set = set()
-        
-        for line_b, shared_on_line_b in line_b_hashes.items():
-            overlap = len(set(shared_on_line_a) & set(shared_on_line_b))
+        best_match_set: set = set()
+
+        for line_b, shared_b in line_b_shared.items():
+            overlap = len(shared_set & set(shared_b))
             if overlap > best_match_count:
                 best_match_count = overlap
                 best_match_line = line_b
-                best_match_set = set(shared_on_line_a) & set(shared_on_line_b)
-        
-        # Calculate score: how much of this line's shared content matches?
-        score = best_match_count / len(shared_on_line_a) if shared_on_line_a else 0.0
-        
+                best_match_set = shared_set & set(shared_b)
+
         line_similarity_a[line_a] = {
             "score": score,
             "best_match_line": best_match_line,
             "matches": best_match_count,
             "shared_grams": list(best_match_set),
-            "total_shared_on_line": len(shared_on_line_a),
+            "total_shared_on_line": len(shared_on_line),
         }
-    
+
     return line_similarity_a
 
 
@@ -120,13 +132,17 @@ def build_line_mapping(
         score = sim_info["score"]
         line_b = sim_info["best_match_line"]
         
-        # Determine color based on score
+        # Determine color based on score (4 severity bands)
         if score >= 0.75:
-            color = "red"      # High similarity
-        elif score >= 0.40:
-            color = "yellow"   # Medium similarity
+            color = "red"      # CRITICAL
+        elif score >= 0.55:
+            color = "orange"   # HIGH
+        elif score >= 0.35:
+            color = "yellow"   # MEDIUM
+        elif score >= 0.20:
+            color = "green"    # LOW
         else:
-            color = "none"     # Low similarity
+            color = "none"
         
         if line_b is not None:  # Only add if there's a match
             mappings.append({
