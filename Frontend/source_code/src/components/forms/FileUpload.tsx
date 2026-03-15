@@ -1,6 +1,13 @@
 "use client";
 
-import { File as FileIcon, Trash } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  Copy,
+  File as FileIcon,
+  Info,
+  Trash,
+} from "lucide-react";
 import React, { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useForm } from "react-hook-form";
@@ -16,6 +23,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormField,
   FormItem,
@@ -24,7 +37,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Separator } from "@/components/ui/separator";
-import { cn, delay } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { LoadingButton } from "../LoadingButton";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -33,6 +46,10 @@ const formSchema = z.object({
   files: z
     .array(z.instanceof(File))
     .min(1, "Please upload at least one file.")
+    .refine(
+      (files) => files.every((file) => file.name.endsWith(".zip")),
+      "Only .zip files are accepted.",
+    )
     .refine(
       (files) => files.every((file) => file.size <= MAX_FILE_SIZE),
       "Each file must be 50MB or less.",
@@ -43,6 +60,16 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function FileUpload() {
   const [loading, setLoading] = useState(false);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!submissionId) return;
+    navigator.clipboard.writeText(submissionId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { files: [] },
@@ -51,6 +78,7 @@ export default function FileUpload() {
   const watchedFiles = form.watch("files");
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: { "application/zip": [".zip"] },
     onDrop: (acceptedFiles) => {
       const current = form.getValues("files");
       form.setValue("files", [...current, ...acceptedFiles], {
@@ -69,124 +97,225 @@ export default function FileUpload() {
 
   const onSubmit = async (data: FormValues) => {
     setLoading(true);
-    await delay(3000);
-    console.log("Submitted files:", data.files);
-    setLoading(false);
-    // handle upload logic here
+    try {
+      const assignmentKey = sessionStorage.getItem("assignmentKey");
+      if (!assignmentKey) {
+        form.setError("root", {
+          type: "manual",
+          message: "Assignment key not found. Please log in again.",
+        });
+        return;
+      }
+
+      const body = new FormData();
+      body.append("file", data.files[0]);
+
+      const res = await fetch(`/api/submissions/${assignmentKey}`, {
+        method: "POST",
+        body,
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        form.setError("root", {
+          type: "manual",
+          message: result.message ?? "Submission failed. Please try again.",
+        });
+        return;
+      }
+
+      form.reset();
+      setSubmissionId(result.submission_id);
+    } catch {
+      form.setError("root", {
+        type: "manual",
+        message: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="flex items-center justify-center p-10">
-      <Card className="sm:mx-auto sm:min-w-[450px]">
-        <CardHeader>
-          <CardTitle>Assignment Name - Course</CardTitle>
-          <CardDescription>
-            Please consider to pack everything into one zip file
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
-              <FormField
-                control={form.control}
-                name="files"
-                render={() => (
-                  <FormItem>
-                    <FormLabel className="font-medium">
-                      {"File(s) upload"}
-                    </FormLabel>
-                    <FormControl>
-                      <div
-                        {...getRootProps()}
-                        className={cn(
-                          isDragActive
-                            ? "border-primary bg-primary/10 ring-2 ring-primary/20"
-                            : "border-border",
-                          "mt-2 flex cursor-pointer justify-center rounded-md border border-dashed px-6 py-20 transition-colors duration-200",
-                        )}
-                      >
-                        <div>
-                          <FileIcon
-                            className="mx-auto h-12 w-12 text-muted-foreground/80"
-                            aria-hidden={true}
-                          />
-                          <div className="mt-4 flex text-muted-foreground">
-                            <p>Drag and drop or</p>
-                            <span className="relative pl-1 font-medium text-primary hover:text-primary/80 hover:underline hover:underline-offset-4">
-                              {"choose file(s)"}
-                            </span>
-                            <input {...getInputProps()} />
-                            <p className="pl-1">to upload</p>
+    <>
+      <div className="flex items-center justify-center p-10">
+        <Card className="sm:mx-auto sm:min-w-[450px]">
+          <CardHeader>
+            <CardTitle>Assignment Name - Course</CardTitle>
+            <CardDescription>
+              Please pack everything into one zip file before uploading
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)}>
+                <FormField
+                  control={form.control}
+                  name="files"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel className="font-medium">File upload</FormLabel>
+                      <FormControl>
+                        <div
+                          {...getRootProps()}
+                          className={cn(
+                            isDragActive
+                              ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                              : "border-border",
+                            "mt-2 flex cursor-pointer justify-center rounded-md border border-dashed px-6 py-20 transition-colors duration-200",
+                          )}
+                        >
+                          <div>
+                            <FileIcon
+                              className="mx-auto h-12 w-12 text-muted-foreground/80"
+                              aria-hidden={true}
+                            />
+                            <div className="mt-4 flex text-muted-foreground">
+                              <p>Drag and drop or</p>
+                              <span className="relative pl-1 font-medium text-primary hover:text-primary/80 hover:underline hover:underline-offset-4">
+                                choose a file
+                              </span>
+                              <input {...getInputProps()} />
+                              <p className="pl-1">to upload</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </FormControl>
-                    <p className="mt-2 text-sm leading-5 text-muted-foreground sm:flex sm:items-center sm:justify-between">
-                      <span>All file types are allowed.</span>
-                      <span>Max. size per file: 50MB</span>
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      </FormControl>
+                      <p className="mt-2 text-sm leading-5 text-muted-foreground sm:flex sm:items-center sm:justify-between">
+                        <span>Only .zip files are accepted.</span>
+                        <span>Max. size: 50MB</span>
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              {watchedFiles.length > 0 && (
-                <>
-                  <h4 className="mt-6 font-medium text-foreground">
-                    File(s) to upload
-                  </h4>
-                  <ul role="list" className="mt-4 space-y-4">
-                    {watchedFiles.map((file) => (
-                      <li key={file.name}>
-                        <Card className="relative p-4">
-                          <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Remove file"
-                              onClick={() => removeFile(file.name)}
-                            >
-                              <Trash className="h-5 w-5" />
-                            </Button>
-                          </div>
-                          <CardContent className="flex items-center space-x-3 p-0">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
-                              <FileIcon className="h-5 w-5 text-foreground" />
-                            </span>
-                            <div>
-                              <p className="font-medium text-foreground">
-                                {file.name}
-                              </p>
-                              <p className="mt-0.5 text-sm text-muted-foreground">
-                                {(file.size / 1024).toFixed(1)} KB
-                              </p>
+                {watchedFiles.length > 0 && (
+                  <>
+                    <h4 className="mt-6 font-medium text-foreground">
+                      File to upload
+                    </h4>
+                    <ul role="list" className="mt-4 space-y-4">
+                      {watchedFiles.map((file) => (
+                        <li key={file.name}>
+                          <Card className="relative p-4">
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Remove file"
+                                onClick={() => removeFile(file.name)}
+                              >
+                                <Trash className="h-5 w-5" />
+                              </Button>
                             </div>
-                          </CardContent>
-                        </Card>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
+                            <CardContent className="flex items-center space-x-3 p-0">
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
+                                <FileIcon className="h-5 w-5 text-foreground" />
+                              </span>
+                              <div>
+                                <p className="font-medium text-foreground">
+                                  {file.name}
+                                </p>
+                                <p className="mt-0.5 text-sm text-muted-foreground">
+                                  {(file.size / 1024).toFixed(1)} KB
+                                </p>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
 
-              <Separator className="my-6" />
-              <div className="flex items-center justify-end space-x-3">
+                {form.formState.errors.root && (
+                  <p className="mt-4 text-sm text-destructive">
+                    {form.formState.errors.root.message}
+                  </p>
+                )}
+
+                <Separator className="my-6" />
+                <div className="flex items-center justify-end space-x-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => form.reset()}
+                  >
+                    Cancel
+                  </Button>
+                  <LoadingButton loading={loading} type="submit">
+                    Submit
+                  </LoadingButton>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+
+      <AlertDialog open={submissionId !== null}>
+        <AlertDialogContent className="sm:max-w-sm">
+          <AlertDialogTitle className="sr-only">
+            Submission Successful
+          </AlertDialogTitle>
+          <div className="flex flex-col items-center gap-5 py-2 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <CheckCircle2 className="h-9 w-9 text-primary" />
+            </div>
+            <div className="space-y-1.5">
+              <h2 className="text-2xl font-bold">Submission Successful!</h2>
+              <p className="text-base text-muted-foreground">
+                Your assignment has been submitted successfully.
+              </p>
+            </div>
+            <div className="w-full rounded-lg border bg-muted/50 px-5 py-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Submission ID
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <p className="font-mono text-xl font-semibold tracking-widest text-foreground">
+                  {submissionId}
+                </p>
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() => form.reset()}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={handleCopy}
+                  aria-label="Copy submission ID"
                 >
-                  Cancel
+                  {copied ? (
+                    <Check className="h-4 w-4 text-primary transition-all" />
+                  ) : (
+                    <Copy className="h-4 w-4 transition-all" />
+                  )}
                 </Button>
-                <LoadingButton loading={loading} type="submit">
-                  Submit
-                </LoadingButton>
               </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-    </div>
+            </div>
+            <div className="flex w-full items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-left">
+              <Info className="mt-1 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-sm font-medium text-primary">
+                Save this ID - you&apos;ll need it to check your similarity
+                result later.
+              </p>
+            </div>
+            <AlertDialogAction
+              className="w-full"
+              onClick={async () => {
+                await fetch("/api/auth/logout", {
+                  method: "POST",
+                });
+                sessionStorage.clear();
+                window.location.href = "/";
+              }}
+            >
+              Done
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { LoadingButton } from "../LoadingButton";
 import { useState } from "react";
-import { delay } from "@/lib/utils";
 import ToggleFormButton from "./ToggleFormButton";
 import { loginFormSchema } from "./formSchema";
 import SignUpForm from "./SignUpForm";
@@ -69,6 +68,7 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
       }
 
       router.push("/dashboard");
+      router.refresh();
     } catch {
       loginForm.setError("root", {
         type: "manual",

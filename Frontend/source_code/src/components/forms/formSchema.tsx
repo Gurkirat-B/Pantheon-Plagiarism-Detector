@@ -5,7 +5,10 @@ const email = z
   .trim()
   .min(3, "Email must be at least 3 characters.")
   .email("Please type a valid email.");
-const password = z
+
+const password = z.string().min(1, { message: "Password is required." });
+
+const registerPassword = z
   .string()
   .min(6, { message: "Password must be at least 6 characters long." })
   .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
@@ -23,7 +26,7 @@ const signUpFormSchema = z
       .string()
       .min(1, { message: "Name must be at least 1 character long." }),
     email,
-    password,
+    password: registerPassword,
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
