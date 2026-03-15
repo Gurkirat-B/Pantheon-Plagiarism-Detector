@@ -45,6 +45,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
 import type { Course, Assignment } from "./types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ─── Local form types ─────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ function AssignmentRow({
           <span>·</span>
           <span className="capitalize">{assignment.language}</span>
           <span>·</span>
-          <span>Key: Add later</span>
+          <span>Key: {assignment.assignment_id}</span>
         </div>
       </div>
 
@@ -492,7 +493,7 @@ export function DashboardClient({
 
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold text-slate-800">
-                  {course.name}
+                  {course.name} {course.course_id}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Code: {course.code}
@@ -635,16 +636,21 @@ export function DashboardClient({
             </div>
             <div>
               <Label className="mb-1.5 block text-sm">Language</Label>
-              <Input
-                placeholder="e.g. java, python, c"
+              <Select
                 value={createForm.language}
-                onChange={(e) =>
-                  setCreateForm((prev) => ({
-                    ...prev,
-                    language: e.target.value,
-                  }))
+                onValueChange={(value) =>
+                  setCreateForm((prev) => ({ ...prev, language: value }))
                 }
-              />
+              >
+                <SelectTrigger className="mt-1.5 w-full">
+                  <SelectValue placeholder="Select a language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="c">C</SelectItem>
+                  <SelectItem value="cpp">C++</SelectItem>
+                  <SelectItem value="java">Java</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="mb-1.5 block text-sm">Due Date</Label>
