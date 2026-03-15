@@ -15,7 +15,7 @@ def _require_professor(user: dict):
 
 
 class CreateCourseRequest(BaseModel):
-    code: int
+    code: str
     name: str
 
 
