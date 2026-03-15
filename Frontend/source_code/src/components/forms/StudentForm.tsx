@@ -1,5 +1,4 @@
 "use client";
-import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -12,16 +11,15 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { LoadingButton } from "../LoadingButton";
 import { useState } from "react";
-import { delay } from "@/lib/utils";
 import ToggleFormButton from "./ToggleFormButton";
+import { loginFormSchema } from "./formSchema";
 import { useRouter } from "next/navigation";
 
-const key = z.string().trim().min(3, "Key must be at least 3 characters.");
-
-const studentFormSchema = z.object({
-  key: key,
+const studentFormSchema = loginFormSchema.extend({
+  key: z.string().trim().min(3, "Key must be at least 3 characters."),
 });
 
 type FormState = "student" | "instructor";
@@ -36,49 +34,44 @@ export default function StudentForm({
   onSwitch,
 }: StudentFormProps) {
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
   const router = useRouter();
   const studentForm = useForm<z.infer<typeof studentFormSchema>>({
     resolver: zodResolver(studentFormSchema),
     defaultValues: {
+      email: "",
+      password: "",
       key: "",
     },
   });
 
-  // function onSubmit(values: z.infer<typeof formSchema>) {
-  //   try {
-  //     fetch("https://formsubmit.co/ajax/f57f135f6f3011863d0d0df3158180bd", {
-  //       method: "POST",
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //         Accept: "application/json",
-  //       },
-  //       body: JSON.stringify(values),
-  //     })
-  //       .then((response) => response.json())
-  //       .then((data) => console.log(data))
-  //       .catch((error) => console.log(error));
-  //     toast({ description: "Submit form successfully!" });
-  //   } catch (error) {
-  //     console.error("Form submission error", error);
-  //     toast({
-  //       variant: "destructive",
-  //       description: "Failed to submit the form. Please try again.",
-  //     });
-  //   }
-  // }
   async function onSubmit(values: z.infer<typeof studentFormSchema>) {
+    setLoading(true);
     try {
-      setLoading(true);
-      toast({ description: "Key: ".concat(values.key as string) });
-      await delay(3000);
-      router.push("/upload")
-    } catch (error) {
-      console.error("Form submission error", error);
-      toast({
-        variant: "destructive",
-        description: "Failed to submit the form. Please try again.",
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: values.email,
+          password: values.password,
+        }),
       });
+      const result = await res.json();
+      if (!res.ok) {
+        studentForm.setError("root", {
+          type: "manual",
+          message: result.message,
+        });
+        return;
+      }
+      sessionStorage.setItem("assignmentKey", values.key);
+      router.push("/upload");
+    } catch {
+      studentForm.setError("root", {
+        type: "manual",
+        message: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -91,12 +84,52 @@ export default function StudentForm({
         <div className="flex w-full flex-col gap-2 text-center">
           <div className="text-2xl font-bold lg:text-3xl">Welcome Student</div>
           <p className="text-base text-muted-foreground">
-            Please enter the assignment key provided by your instructor
+            Enter your credentials and the assignment key provided by your
+            instructor
           </p>
         </div>
         <ToggleFormButton
           activeForm={activeForm}
           onSwitch={(value) => onSwitch(value)}
+        />
+        <FormField
+          control={studentForm.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-base sm:text-lg">Email</FormLabel>
+              <FormControl>
+                <Input
+                  id="email"
+                  placeholder="student@example.com"
+                  type="email"
+                  autoComplete="email"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={studentForm.control}
+          name="password"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel htmlFor="password" className="text-base sm:text-lg">
+                Password
+              </FormLabel>
+              <FormControl>
+                <PasswordInput
+                  id="password"
+                  placeholder="•••••••"
+                  autoComplete="current-password"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
         />
         <FormField
           control={studentForm.control}
@@ -110,23 +143,34 @@ export default function StudentForm({
                 <Input
                   id="key"
                   placeholder="Assignment Key"
-                  autoComplete="new-password"
+                  autoComplete="off"
                   {...field}
                 />
               </FormControl>
-
               <FormMessage />
             </FormItem>
           )}
         />
-
+        {studentForm.formState.errors.root && (
+          <p className="text-sm text-destructive">
+            {studentForm.formState.errors.root.message}
+          </p>
+        )}
         <LoadingButton
           loading={loading}
           className="w-full px-10 py-6 text-base capitalize lg:py-7 lg:text-lg"
           type="submit"
         >
-          Submit
+          Sign In
         </LoadingButton>
+        <div className="text-base">
+          <p>
+            Want to check the similarity results?{" "}
+            <span className="cursor-pointer font-medium underline transition-opacity hover:opacity-70">
+              Click here
+            </span>
+          </p>
+        </div>
       </form>
     </Form>
   );
