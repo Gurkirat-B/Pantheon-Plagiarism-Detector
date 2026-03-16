@@ -31,3 +31,9 @@ At the top of the page, the system displays a quick summary of the assignment ac
 If the client wants to compare 2 students assignments, then they can click the two students to compare the code, and the engine shows the similarity rate along with the preview code 
 
 To conclude, that is the alpha version of our code comparison software, Pantheon. 
+
+
+
+Questions for Dave
+1) Should we combine our similarity scores instead of showing separate chunks
+2) Should we start the comparison code once all the assignments have been submitted/due passed, or should we just start comparing once 2 assignments are handed in?
