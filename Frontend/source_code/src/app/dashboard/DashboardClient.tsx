@@ -195,10 +195,6 @@ export function DashboardClient({
   const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
 
-  // ── Course detail fetch (used when switching courses client-side) ──────────
-  // After initial server render, switching courses uses the /api route handler
-  // since we're now in the browser and can't call the backend directly.
-
   // ── Assignment handlers (optimistic — wire to API later) ──────────────────
   const handleSelectCourse = (courseId: string) => {
     const course = courses.find((c) => c.course_id === courseId) ?? null;
