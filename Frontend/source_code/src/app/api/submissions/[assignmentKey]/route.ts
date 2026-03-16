@@ -37,7 +37,7 @@ export async function POST(
 
   if (!res.ok) {
     return NextResponse.json(
-      { message: data.message ?? "Submission failed." },
+      { message: data.message ?? data.detail ?? "Submission failed." },
       { status: res.status },
     );
   }
