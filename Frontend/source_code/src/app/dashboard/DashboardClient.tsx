@@ -392,7 +392,7 @@ export function DashboardClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          code: Number(createCourseForm.code),
+          code: createCourseForm.code,
           name: createCourseForm.name,
         }),
       });

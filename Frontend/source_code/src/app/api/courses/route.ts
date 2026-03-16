@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        code: Number(body.code),
+        code: body.code,
         name: body.name,
       }),
     });
