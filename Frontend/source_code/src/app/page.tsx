@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import { openGraphShared } from "@/app/shared-metadata";
 import MainForm from "@/components/forms/MainForm";
+import { redirectIfAuthenticated } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Pantheon Code Plagiarism Detector",
@@ -13,7 +14,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  await redirectIfAuthenticated();
   return (
     <main>
       <section
