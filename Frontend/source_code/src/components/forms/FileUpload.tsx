@@ -39,6 +39,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { LoadingButton } from "../LoadingButton";
+import JSZip from "jszip";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -79,7 +80,37 @@ export default function FileUpload() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { "application/zip": [".zip"] },
-    onDrop: (acceptedFiles) => {
+    onDrop: async (acceptedFiles) => {
+      for (const file of acceptedFiles) {
+        try {
+          const zip = await JSZip.loadAsync(file);
+          const fileNames = Object.keys(zip.files).filter(
+            (name) => !zip.files[name].dir, // exclude directory entries
+          );
+
+          const hasValidSource = fileNames.some((name) =>
+            [".java", ".cpp", ".c"].some((ext) => name.endsWith(ext)),
+          );
+
+          if (!hasValidSource) {
+            form.setError("files", {
+              type: "manual",
+              message:
+                "The zip must contain at least one .java, .cpp, or .c file.",
+            });
+            return;
+          }
+        } catch {
+          form.setError("files", {
+            type: "manual",
+            message: "Could not read the zip file. Please try again.",
+          });
+          return;
+        }
+      }
+
+      // All files passed — clear any previous error and set value
+      form.clearErrors("files");
       const current = form.getValues("files");
       form.setValue("files", [...current, ...acceptedFiles], {
         shouldValidate: true,

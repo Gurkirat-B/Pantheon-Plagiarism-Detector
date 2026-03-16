@@ -1,7 +1,7 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DashboardClient } from "./DashboardClient";
 import type { Course } from "./types";
+import { requireRole } from "@/lib/auth";
 
 async function getAllCoursesWithAssignments(token: string): Promise<Course[]> {
   // First fetch the course list
@@ -33,11 +33,7 @@ async function getAllCoursesWithAssignments(token: string): Promise<Course[]> {
 }
 
 export default async function DashboardPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("access_token")?.value;
-
-  if (!token) redirect("/");
-
+  const token = await requireRole("professor");
   const courses = await getAllCoursesWithAssignments(token);
 
   return (
