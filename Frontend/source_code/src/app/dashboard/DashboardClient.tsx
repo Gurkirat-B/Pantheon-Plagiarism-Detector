@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -45,7 +44,14 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
 import type { Course, Assignment } from "./types";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { LoadingButton } from "@/components/LoadingButton";
 
 // ─── Local form types ─────────────────────────────────────────────────────────
 
@@ -172,6 +178,22 @@ export function DashboardClient({
     code: "",
     name: "",
   });
+  const [createCourseError, setCreateCourseError] = useState<string | null>(
+    null,
+  );
+  const [createAssignmentError, setCreateAssignmentError] = useState<
+    string | null
+  >(null);
+  const [deleteAssignmentError, setDeleteAssignmentError] = useState<
+    string | null
+  >(null);
+  const [deleteCourseError, setDeleteCourseError] = useState<string | null>(
+    null,
+  );
+  const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
+  const [isCreatingCourse, setIsCreatingCourse] = useState(false);
+  const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
+  const [isDeletingCourse, setIsDeletingCourse] = useState(false);
 
   // ── Course detail fetch (used when switching courses client-side) ──────────
   // After initial server render, switching courses uses the /api route handler
@@ -226,6 +248,8 @@ export function DashboardClient({
 
   const handleConfirmDelete = async () => {
     if (!deletingAssignment) return;
+    setDeleteAssignmentError(null);
+    setIsDeletingAssignment(true);
     try {
       const res = await fetch(
         `/api/assignments/${deletingAssignment.assignmentId}`,
@@ -264,7 +288,11 @@ export function DashboardClient({
       );
       setDeleteDialogOpen(false);
     } catch {
-      console.error("Failed to delete assignment.");
+      setDeleteAssignmentError(
+        "Failed to delete assignment. Please try again.",
+      );
+    } finally {
+      setIsDeletingAssignment(false);
     }
   };
 
@@ -276,6 +304,8 @@ export function DashboardClient({
       !selectedCourse
     )
       return;
+    setCreateAssignmentError(null);
+    setIsCreatingAssignment(true);
     try {
       const res = await fetch("/api/assignments", {
         method: "POST",
@@ -313,7 +343,11 @@ export function DashboardClient({
       setCreateForm({ title: "", dueDate: "", language: "" });
       setCreateDialogOpen(false);
     } catch {
-      console.error("Failed to create assignment.");
+      setCreateAssignmentError(
+        "Failed to create assignment. Please try again.",
+      );
+    } finally {
+      setIsCreatingAssignment(false);
     }
   };
 
@@ -361,6 +395,8 @@ export function DashboardClient({
 
   const handleConfirmDeleteCourse = async () => {
     if (!deletingCourse) return;
+    setDeleteCourseError(null);
+    setIsDeletingCourse(true);
     try {
       const res = await fetch(`/api/courses/${deletingCourse.courseId}`, {
         method: "DELETE",
@@ -381,12 +417,16 @@ export function DashboardClient({
       }
       setDeleteCourseDialogOpen(false);
     } catch {
-      console.error("Failed to delete course.");
+      setDeleteCourseError("Failed to delete course. Please try again.");
+    } finally {
+      setIsDeletingCourse(false);
     }
   };
 
   const handleCreateCourse = async () => {
     if (!createCourseForm.code || !createCourseForm.name) return;
+    setCreateCourseError(null);
+    setIsCreatingCourse(true);
     try {
       const res = await fetch("/api/courses", {
         method: "POST",
@@ -409,8 +449,9 @@ export function DashboardClient({
       setCreateCourseForm({ code: "", name: "" });
       setCreateCourseDialogOpen(false);
     } catch {
-      // optionally show an error toast here
-      console.error("Failed to create course.");
+      setCreateCourseError("Failed to create course. Please try again.");
+    } finally {
+      setIsCreatingCourse(false);
     }
   };
   // ── Render ────────────────────────────────────────────────────────────────
@@ -493,7 +534,7 @@ export function DashboardClient({
 
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold text-slate-800">
-                  {course.name} {course.course_id}
+                  {course.name}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Code: {course.code}
@@ -618,7 +659,13 @@ export function DashboardClient({
       </Dialog>
 
       {/* ── Create Assignment Dialog ────────────────────────────────────────── */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          setCreateDialogOpen(open);
+          if (!open) setCreateAssignmentError(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New Assignment</DialogTitle>
@@ -665,25 +712,37 @@ export function DashboardClient({
                 }
               />
             </div>
+            {createAssignmentError && (
+              <p className="text-sm text-destructive">
+                {createAssignmentError}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button
+            <LoadingButton
+              loading={isCreatingAssignment}
               onClick={handleCreateAssignment}
               disabled={
                 !createForm.title || !createForm.dueDate || !createForm.language
               }
             >
               Create
-            </Button>
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* ── Delete Assignment Confirmation ──────────────────────────────────── */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setDeleteAssignmentError(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete assignment?</AlertDialogTitle>
@@ -693,14 +752,18 @@ export function DashboardClient({
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteAssignmentError && (
+            <p className="text-sm text-destructive">{deleteAssignmentError}</p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            <LoadingButton
+              loading={isDeletingAssignment}
               onClick={handleConfirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
-            </AlertDialogAction>
+            </LoadingButton>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -718,7 +781,7 @@ export function DashboardClient({
             <div>
               <Label className="mb-1.5 block text-sm">Course Code</Label>
               <Input
-                placeholder="4002"
+                placeholder="COSC 1P01"
                 value={editingCourse?.form.code ?? ""}
                 onChange={(e) =>
                   setEditingCourse((prev) =>
@@ -735,7 +798,7 @@ export function DashboardClient({
             <div>
               <Label className="mb-1.5 block text-sm">Course Name</Label>
               <Input
-                placeholder="COSC_4P02"
+                placeholder="Introduction to Computer Science"
                 value={editingCourse?.form.name ?? ""}
                 onChange={(e) =>
                   setEditingCourse((prev) =>
@@ -767,7 +830,10 @@ export function DashboardClient({
       {/* ── Create Course Dialog ────────────────────────────────────────────── */}
       <Dialog
         open={createCourseDialogOpen}
-        onOpenChange={setCreateCourseDialogOpen}
+        onOpenChange={(open) => {
+          setCreateCourseDialogOpen(open);
+          if (!open) setCreateCourseError(null);
+        }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -777,7 +843,7 @@ export function DashboardClient({
             <div>
               <Label className="mb-1.5 block text-sm">Course Code</Label>
               <Input
-                placeholder="4002"
+                placeholder="COSC 1P01"
                 value={createCourseForm.code}
                 onChange={(e) =>
                   setCreateCourseForm((prev) => ({
@@ -790,7 +856,7 @@ export function DashboardClient({
             <div>
               <Label className="mb-1.5 block text-sm">Course Name</Label>
               <Input
-                placeholder="COSC_4P02"
+                placeholder="Introduction to Computer Science"
                 value={createCourseForm.name}
                 onChange={(e) =>
                   setCreateCourseForm((prev) => ({
@@ -800,12 +866,20 @@ export function DashboardClient({
                 }
               />
             </div>
+            {createCourseError && (
+              <p className="text-sm text-destructive">{createCourseError}</p>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button onClick={handleCreateCourse}>Create</Button>
+            <LoadingButton
+              loading={isCreatingCourse}
+              onClick={handleCreateCourse}
+            >
+              Create
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -813,7 +887,10 @@ export function DashboardClient({
       {/* ── Delete Course Confirmation ──────────────────────────────────────── */}
       <AlertDialog
         open={deleteCourseDialogOpen}
-        onOpenChange={setDeleteCourseDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteCourseDialogOpen(open);
+          if (!open) setDeleteCourseError(null);
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -823,14 +900,18 @@ export function DashboardClient({
               will be permanently deleted. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteCourseError && (
+            <p className="text-sm text-destructive">{deleteCourseError}</p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            <LoadingButton
+              loading={isDeletingCourse}
               onClick={handleConfirmDeleteCourse}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
-            </AlertDialogAction>
+            </LoadingButton>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
