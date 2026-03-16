@@ -1,6 +1,6 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AssignmentView } from "./AssignmentView";
+import { requireRole } from "@/lib/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,10 +85,7 @@ export default async function AssignmentPage({
   params: Promise<{ assignmentSlug: string }>;
 }) {
   const { assignmentSlug } = await params;
-
-  const cookieStore = await cookies();
-  const token = cookieStore.get("access_token")?.value;
-  if (!token) redirect("/");
+  const token = await requireRole("professor");
 
   // Fetch assignment first, then course in parallel
   const assignment = await getAssignment(token, assignmentSlug);

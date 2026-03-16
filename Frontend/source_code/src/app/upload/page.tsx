@@ -1,6 +1,8 @@
 import FileUpload from "@/components/forms/FileUpload";
+import { requireRole } from "@/lib/auth";
 
-export default function UploadPage() {
+export default async function UploadPage() {
+  await requireRole("student");
   return (
     <main>
       <section
