@@ -42,10 +42,14 @@ from engine.similarity.scores import weighted_score
 from engine.similarity.line_matcher import calculate_line_similarity, build_line_mapping, get_full_source_with_mapping
 from engine.evidence.evidence import build_evidence
 from engine.obfuscation.detect import detect_obfuscation
+from engine.similarity.chunk import compute_method_similarity
 
-# k-gram size and winnowing window
-_K = 8
-_W = 4
+# k-gram size and winnowing window.
+# k=10, W=5: guaranteed detection of any shared sequence >= 14 tokens
+# (~4-5 logical lines). Raising k from 8 eliminates generic 8-gram false
+# positives (e.g. any code ending a function call with ", NUM);" matches).
+_K = 10
+_W = 5
 
 
 def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str = "mixed"):
@@ -134,6 +138,22 @@ def compare(
             fp_b = _subtract_fingerprints(fp_b, template_fp)
 
         scores = weighted_score(fp_a, fp_b)
+
+        # Method-level similarity: compare submissions method-by-method.
+        # Catches reordered code where global scores are diluted by position
+        # differences but individual methods still match strongly.
+        method_sim = compute_method_similarity(
+            proc_a["tok_norm"], proc_b["tok_norm"], gram_k=_K
+        )
+        scores["method_similarity"] = round(method_sim, 4)
+
+        # If method-level analysis shows significantly stronger similarity
+        # than the global score, boost weighted_final accordingly.
+        # Threshold: method_sim must exceed global score by >0.15 to trigger,
+        # preventing noise from inflating scores on genuinely different code.
+        if method_sim > scores["weighted_final"] + 0.15:
+            boosted = round(0.65 * method_sim + 0.35 * scores["weighted_final"], 4)
+            scores["weighted_final"] = min(1.0, boosted)
 
         evidence = build_evidence(
             fp_a=fp_a,
@@ -317,6 +337,15 @@ def batch_analyze(
             pb = processed[id_b]
 
             scores = weighted_score(pa["fp"], pb["fp"])
+
+            method_sim = compute_method_similarity(
+                pa["tok_norm"], pb["tok_norm"], gram_k=_K
+            )
+            scores["method_similarity"] = round(method_sim, 4)
+            if method_sim > scores["weighted_final"] + 0.15:
+                boosted = round(0.65 * method_sim + 0.35 * scores["weighted_final"], 4)
+                scores["weighted_final"] = min(1.0, boosted)
+
             if scores["weighted_final"] < threshold:
                 continue
 
