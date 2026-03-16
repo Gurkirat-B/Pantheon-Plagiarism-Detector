@@ -11,7 +11,11 @@ Frontend
   - Students will use their submission ID to check their score after (the frontend will create this page)
 - Adding a verification process to know the person accessing the assignment is actually a student
   - adding a student login page
-
+- idiot proof submission id that is being copied
+- Add email confirmation for submission
+- Add timestamps for student submissions in their pop-up
+- Add the feature to download the whole Similarity score
+- Add user guide for the software
 
 Engine
 - Ability to set up auto-comparisons as submissions are made 

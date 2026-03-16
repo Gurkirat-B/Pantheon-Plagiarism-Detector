@@ -85,7 +85,7 @@ def build_evidence(
     tok_b: List[Token],
     source_map_a: List[SourceMapEntry],
     source_map_b: List[SourceMapEntry],
-    k: int = 8,
+    k: int = 5,
     merge_gap: int = 3,
     work_dir_a: Optional[Path] = None,
     work_dir_b: Optional[Path] = None,
@@ -139,8 +139,11 @@ def build_evidence(
     merged: List[Tuple[int, int, int, int]] = [line_pairs[0]]
     for a1, a2, b1, b2 in line_pairs[1:]:
         pa1, pa2, pb1, pb2 = merged[-1]
-        # merge if both A-side and B-side are close/overlapping
-        if a1 <= pa2 + merge_gap and b1 <= pb2 + merge_gap:
+        # merge only when BOTH sides are close/overlapping AND the B-side is
+        # moving forward (b1 >= pb1).  Without the monotonicity check, two
+        # unrelated matches can be fused: A-close + B-backwards still satisfies
+        # "b1 <= pb2 + gap" and produces a nonsense wide evidence block.
+        if a1 <= pa2 + merge_gap and b1 >= pb1 and b1 <= pb2 + merge_gap:
             merged[-1] = (pa1, max(pa2, a2), pb1, max(pb2, b2))
         else:
             merged.append((a1, a2, b1, b2))
@@ -196,12 +199,13 @@ def build_evidence(
         else:
             code_b = ""
 
-        # Skip trivial matches where either side spans fewer than 2 lines.
-        # These are k-gram artifacts — an isolated bracket or blank line
-        # happening to match. Not meaningful evidence to show.
+        # Skip trivial matches where either side spans fewer than 3 lines.
+        # k-gram artifacts (isolated brackets, single-statement commonalities)
+        # rarely span more than 2 lines. Requiring span >= 3 eliminates the
+        # most common false positives without hiding real copied blocks.
         a_span = la2 - la1
         b_span = lb2 - lb1
-        if a_span < 2 or b_span < 2:
+        if a_span < 3 or b_span < 3:
             continue
 
         # rough token count for this block
