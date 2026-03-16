@@ -1,5 +1,8 @@
 from uuid import UUID
 
+import io
+import zipfile
+from typing import Iterable
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -10,6 +13,36 @@ from config import S3_BUCKET
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 s3 = boto3.client("s3")
+ALLOWED_SOURCE_EXTS = {".java", ".cpp", ".c"}
+
+def _zip_contains_allowed_source(file_bytes: bytes, allowed_exts: Iterable[str] = ALLOWED_SOURCE_EXTS) -> bool:
+    """
+    Returns True if the zip contains at least one file ending in an allowed extension.
+    Raises HTTPException for invalid/corrupt zip.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            for info in z.infolist():
+                name = info.filename
+
+                # skip directories
+                if name.endswith("/"):
+                    continue
+
+                # skip common junk
+                lowered = name.lower()
+                if lowered.startswith("__macosx/") or lowered.endswith(".ds_store"):
+                    continue
+
+                # check extension
+                dot = lowered.rfind(".")
+                ext = lowered[dot:] if dot != -1 else ""
+                if ext in allowed_exts:
+                    return True
+
+            return False
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid .zip archive")
 
 def _delete_s3_object_if_exists(bucket: str, key: str) -> None:
     """
@@ -34,11 +67,18 @@ async def upload_submission(
     # check file type
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are allowed")
-
+    
     # read file bytes
     file_bytes = await file.read()
     size = len(file_bytes)
 
+    # verify zip contains at least one allowed source file
+    if not _zip_contains_allowed_source(file_bytes):
+        raise HTTPException(
+            status_code=400,
+            detail="ZIP must contain at least one .java, .cpp, or .c file",
+        )
+    
     # Look up current submission's S3 pointer (if any)
     with get_db_connection() as conn:
         existing = conn.execute(
