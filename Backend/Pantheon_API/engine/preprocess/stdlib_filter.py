@@ -16,10 +16,15 @@ JAVA_BOILERPLATE_ANNOTATIONS = {
     "@FunctionalInterface", "@SafeVarargs",
 }
 
-_java_import_re  = re.compile(r"^\s*import\s+(?:static\s+)?([\w.]+(?:\.\*)?)\s*;", re.MULTILINE)
-_java_package_re = re.compile(r"^\s*package\s+[\w.]+\s*;", re.MULTILINE)
+# NOTE: All patterns below use ^[ \t]* (not ^\s*) at the start and [ \t]*$ (not \s*$)
+# at the end.  \s includes \n, so ^\s* with re.MULTILINE can greedily consume
+# preceding blank lines, causing sub("", ...) to DELETE those lines rather than
+# just blanking the matched line.  Using [ \t]* restricts matching to spaces/tabs
+# on the same line, preserving line count exactly.
+_java_import_re  = re.compile(r"^[ \t]*import[ \t]+(?:static[ \t]+)?([\w.]+(?:\.\*)?)\s*;", re.MULTILINE)
+_java_package_re = re.compile(r"^[ \t]*package[ \t]+[\w.]+\s*;", re.MULTILINE)
 _java_annotation_boilerplate_re = re.compile(
-    r"^\s*@(Override|SuppressWarnings|Deprecated|FunctionalInterface|SafeVarargs)\b.*$",
+    r"^[ \t]*@(Override|SuppressWarnings|Deprecated|FunctionalInterface|SafeVarargs)\b.*$",
     re.MULTILINE,
 )
 
@@ -27,16 +32,16 @@ _java_annotation_boilerplate_re = re.compile(
 # they don't reflect algorithm logic and create false-positive k-gram matches.
 # Matches single-line calls: System.out.println(...); / System.err.print(...); etc.
 _java_sysout_re = re.compile(
-    r"^\s*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(.*\)\s*;\s*$",
+    r"^[ \t]*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(.*\);[ \t]*$",
     re.MULTILINE,
 )
 
 # public static void main(String[] args) { — identical in every Java program.
 # Strips the declaration line; body tokens are preserved (students may put logic there).
 _java_main_re = re.compile(
-    r"^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?void\s+main\s*"
-    r"\(\s*String\s*(?:\[\s*\]|\[\s*\])\s*\w*\s*\)"
-    r"\s*(?:throws\s+[\w\s,]+?)?\s*\{?\s*$",
+    r"^[ \t]*(?:public[ \t]+|private[ \t]+|protected[ \t]+)?(?:static[ \t]+)?void[ \t]+main[ \t]*"
+    r"\([ \t]*String[ \t]*(?:\[[ \t]*\]|\[[ \t]*\])[ \t]*\w*[ \t]*\)"
+    r"[ \t]*(?:throws[ \t]+[\w\t ,]+?)?[ \t]*\{?[ \t]*$",
     re.MULTILINE,
 )
 
@@ -89,38 +94,38 @@ C_STDLIB_HEADERS = {
 }
 
 # C/C++ define macros that are structural noise
-_c_include_re = re.compile(r"^\s*#\s*include\s*[<\"]([\w./]+)[>\"]", re.MULTILINE)
-_c_pragma_re  = re.compile(r"^\s*#\s*pragma\s+once\s*$", re.MULTILINE)
+_c_include_re = re.compile(r"^[ \t]*#[ \t]*include[ \t]*[<\"]([\w./]+)[>\"]", re.MULTILINE)
+_c_pragma_re  = re.compile(r"^[ \t]*#[ \t]*pragma[ \t]+once[ \t]*$", re.MULTILINE)
 _c_define_guard_re = re.compile(
-    r"^\s*#\s*(?:ifndef|define|endif)\s+\w+_H(?:PP|XX)?\s*(?://.*)?$",
+    r"^[ \t]*#[ \t]*(?:ifndef|define|endif)[ \t]+\w+_H(?:PP|XX)?[ \t]*(?://.*)?$",
     re.MULTILINE,
 )
 
 # printf/scanf/puts/gets and related C stdio output/input calls (single-line).
 # These are universal output boilerplate — not algorithm logic.
 _c_stdio_call_re = re.compile(
-    r"^\s*(?:printf|fprintf|sprintf|snprintf|scanf|fscanf|sscanf|"
-    r"puts|fputs|gets|fgets|perror|putchar|putc|getchar|getc)\s*\(.*\)\s*;\s*$",
+    r"^[ \t]*(?:printf|fprintf|sprintf|snprintf|scanf|fscanf|sscanf|"
+    r"puts|fputs|gets|fgets|perror|putchar|putc|getchar|getc)\s*\(.*\);[ \t]*$",
     re.MULTILINE,
 )
 
 # C++ stream I/O: cout << ... ; / cin >> ... ; / cerr << ... ;
 # Using std:: prefix or bare name. Single-line statements.
 _cpp_stream_re = re.compile(
-    r"^\s*(?:std\s*::\s*)?(?:cout|cin|cerr|clog)\s*(?:<<|>>).*;\s*$",
+    r"^[ \t]*(?:std\s*::\s*)?(?:cout|cin|cerr|clog)\s*(?:<<|>>).*;[ \t]*$",
     re.MULTILINE,
 )
 
 # using namespace std; — boilerplate in virtually every C++ student program
 _cpp_using_ns_re = re.compile(
-    r"^\s*using\s+namespace\s+\w+\s*;\s*$",
+    r"^[ \t]*using[ \t]+namespace[ \t]+\w+\s*;[ \t]*$",
     re.MULTILINE,
 )
 
 # int main(...) / void main(...) declaration line
 # Covers: main(), main(void), main(int argc, char* argv[]), etc.
 _c_main_re = re.compile(
-    r"^\s*(?:int|void)\s+main\s*\([^{;]*\)\s*\{?\s*$",
+    r"^[ \t]*(?:int|void)[ \t]+main[ \t]*\([^{;\n]*\)[ \t]*\{?[ \t]*$",
     re.MULTILINE,
 )
 
@@ -158,7 +163,7 @@ PYTHON_STDLIB_MODULES = {
 }
 
 _python_import_re = re.compile(
-    r"^\s*(?:from\s+([\w.]+)\s+import\s+.*|import\s+([\w., ]+))\s*$",
+    r"^[ \t]*(?:from[ \t]+([\w.]+)[ \t]+import[ \t]+.*|import[ \t]+([\w., ]+))[ \t]*$",
     re.MULTILINE,
 )
 

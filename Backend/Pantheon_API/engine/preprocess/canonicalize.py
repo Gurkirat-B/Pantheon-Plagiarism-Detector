@@ -100,7 +100,9 @@ def canonicalize(source_files: List[Path], out_dir: Path, lang: str = "mixed") -
         cleaned = _normalize_control_flow(cleaned, file_lang)
 
         # normalize whitespace
-        cleaned = _collapse_blanks(cleaned)
+        # NOTE: do NOT collapse blank lines here — comment stripping replaces
+        # comment lines with blank lines to preserve line count, and collapsing
+        # those blanks would shift line numbers, breaking the source map.
         cleaned = _strip_trailing_whitespace(cleaned)
 
         lines = cleaned.splitlines()
@@ -113,7 +115,15 @@ def canonicalize(source_files: List[Path], out_dir: Path, lang: str = "mixed") -
         except ValueError:
             rel = src_file.name
 
-        # source map entry
+        # separator line — must be added BEFORE the source map entry so that
+        # canonical_start correctly points to the first content line, not the
+        # separator.  The off-by-one bug: separator was previously counted
+        # inside canonical_start, causing every source map lookup to return an
+        # original line number that was 1 too high.
+        parts.append(f"# --- {rel} ---\n")
+        current_canonical_line += 1
+
+        # source map entry: canonical_start is now the first content line
         entry = SourceMapEntry(
             canonical_start=current_canonical_line,
             canonical_end=current_canonical_line + len(lines) - 1,
@@ -121,9 +131,6 @@ def canonicalize(source_files: List[Path], out_dir: Path, lang: str = "mixed") -
             original_start=1,
         )
         source_map.append(entry)
-
-        parts.append(f"# --- {rel} ---\n")
-        current_canonical_line += 1
 
         parts.append(cleaned)
         if not cleaned.endswith("\n"):
@@ -316,6 +323,17 @@ def _normalize_control_flow(text: str, lang: str) -> str:
     text = re.sub(r'\+\+\s*(\w+)', r'\1 += 1', text)
     text = re.sub(r'(\w+)\s*--',   r'\1 -= 1', text)
     text = re.sub(r'--\s*(\w+)',   r'\1 -= 1', text)
+
+    # --- normalize compound assignments to simple form ---
+    # `x *= 2` → `x = x * 2`  (and likewise for /=, %=, +=, -=)
+    # Students often swap between `x += y` and `x = x + y` to disguise copying.
+    # Only matches simple variable names (not array subscripts) to avoid
+    # corrupting complex expressions. [^\n;]+ stops at end-of-line or semicolon.
+    text = re.sub(r'\b(\w+)\s*\*=\s*([^\n;]+);', r'\1 = \1 * \2;', text)
+    text = re.sub(r'\b(\w+)\s*/=\s*([^\n;]+);',  r'\1 = \1 / \2;', text)
+    text = re.sub(r'\b(\w+)\s*%=\s*([^\n;]+);',  r'\1 = \1 % \2;', text)
+    text = re.sub(r'\b(\w+)\s*\+=\s*([^\n;]+);', r'\1 = \1 + \2;', text)
+    text = re.sub(r'\b(\w+)\s*-=\s*([^\n;]+);',  r'\1 = \1 - \2;', text)
 
     # --- normalize ternary boolean: `(COND) ? true : false` → `(COND)` ---
     # so it matches `return COND;` produced by the if-else normalizer below
