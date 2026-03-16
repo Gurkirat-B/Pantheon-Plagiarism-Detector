@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
 from database import get_db_connection
-from auth import hash_password, verify_password, create_token
+from auth import hash_password, verify_password, create_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -59,3 +59,11 @@ def login(body: LoginRequest):
 
     token = create_token(str(row[0]), row[2])
     return {"access_token": token, "token_type": "bearer"}
+
+@router.get("/role")
+def get_role(user: dict = Depends(get_current_user)):
+    """
+    Provide Authorization: Bearer <token>
+    Returns the role associated with that token (as validated by get_current_user).
+    """
+    return {"role": user["role"]}
