@@ -1,6 +1,8 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AssignmentView } from "./AssignmentView";
 import { requireRole } from "@/lib/auth";
+import { Metadata } from "next";
+import { openGraphShared } from "@/app/shared-metadata";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,8 +39,8 @@ export type CourseInfo = {
 
 async function getAssignment(
   token: string,
-  assignmentId: string
-): Promise<AssignmentDetail> {
+  assignmentId: string,
+): Promise<AssignmentDetail | null> {
   const res = await fetch(
     `${process.env.BACKEND_URL}/assignments/${assignmentId}`,
     {
@@ -47,34 +49,53 @@ async function getAssignment(
         Authorization: `Bearer ${token}`,
       },
       cache: "no-store",
-    }
+    },
   );
 
   if (res.status === 401) redirect("/");
+  if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to fetch assignment.");
 
   return res.json();
 }
 
-async function getCourse(
-  token: string,
-  courseId: string
-): Promise<CourseInfo> {
-  const res = await fetch(
-    `${process.env.BACKEND_URL}/courses/${courseId}`,
-    {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store",
-    }
-  );
+async function getCourse(token: string, courseId: string): Promise<CourseInfo> {
+  const res = await fetch(`${process.env.BACKEND_URL}/courses/${courseId}`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
 
   if (res.status === 401) redirect("/");
   if (!res.ok) throw new Error("Failed to fetch course.");
 
   return res.json();
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ assignmentSlug: string }>;
+}): Promise<Metadata> {
+  const { assignmentSlug } = await params;
+  const token = await requireRole("professor");
+  const assignment = await getAssignment(token, assignmentSlug);
+  if (assignment === null) notFound();
+  const url = `/dashboard/assignments/${assignmentSlug}`;
+  return {
+    title: assignment.title,
+    description:
+      "View detailed analytics and similarity reports for the assignment. Manage submissions, review plagiarism results, and access comprehensive insights to ensure academic integrity.",
+    alternates: {
+      canonical: url,
+    },
+    openGraph: {
+      ...openGraphShared,
+      url: url,
+    },
+  };
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -89,6 +110,7 @@ export default async function AssignmentPage({
 
   // Fetch assignment first, then course in parallel
   const assignment = await getAssignment(token, assignmentSlug);
+  if (assignment === null) notFound();
   const course = await getCourse(token, assignment.course_id);
 
   return <AssignmentView assignment={assignment} course={course} />;
