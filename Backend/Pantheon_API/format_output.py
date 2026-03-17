@@ -5,15 +5,15 @@ Formatters to convert the detailed engine output into human-readable reports.
 """
 
 _FLAG_LABELS = {
-    "identifier_renaming":  "Variable / identifier renaming",
-    "loop_type_swap":       "Loop type swap  (for <> while <> do-while)",
-    "literal_substitution": "Constant / literal value substitution",
-    "dead_code_insertion":  "Dead code insertion",
-    "code_reordering":      "Code block reordering",
-    "switch_to_ifelse":     "Switch <> if-else conversion",
-    "ternary_to_ifelse":    "Ternary operator <> if-else conversion",
-    "exception_wrapping":   "Try-catch exception wrapping",
-    "for_each_to_indexed":  "For-each loop <> indexed for loop",
+    "identifier_renaming":  "Variable and identifier renaming",
+    "loop_type_swap":       "Loop type changed (for loop rewritten as while or do-while)",
+    "literal_substitution": "Constant and literal value substitution",
+    "dead_code_insertion":  "Dead code added to inflate submission",
+    "code_reordering":      "Code blocks reordered or shuffled",
+    "switch_to_ifelse":     "Switch statement rewritten as an if-else chain",
+    "ternary_to_ifelse":    "Ternary expression expanded into an if-else block",
+    "exception_wrapping":   "Code wrapped inside try-catch blocks",
+    "for_each_to_indexed":  "For-each loop converted to an index-based for loop",
 }
 
 _RISK_COLORS = {
@@ -155,3 +155,53 @@ def format_report_for_backend(result):
 def format_report_text(result):
     """Alias for backwards compatibility."""
     return format_report_for_backend(result)
+
+
+def format_report_as_json(result) -> dict:
+    """
+    Convert the engine result into a JSON-serialisable dict whose shape
+    matches the ComparisonReport type in the frontend's parse_report.ts.
+
+    The backend API returns this instead of the plain-text report.
+    The frontend deserialises it directly — no regex parsing needed.
+    """
+    scores   = result.get("scores") or {}
+    final    = scores.get("weighted_final", 0.0)
+    flags    = result.get("obfuscation_flags", [])
+    evidence = result.get("evidence", [])
+    risk     = _risk(final)
+
+    high   = sum(1 for b in evidence if b.get("match_strength") == "high")
+    medium = sum(1 for b in evidence if b.get("match_strength") == "medium")
+    low    = sum(1 for b in evidence if b.get("match_strength") == "low")
+
+    matches = []
+    for i, block in enumerate(evidence, 1):
+        lines_a = block.get("lines_a", [1, 1])
+        lines_b = block.get("lines_b", [1, 1])
+        matches.append({
+            "index":    i,
+            "severity": block.get("match_strength", "low").upper(),
+            "fileA":    block.get("file_a", ""),
+            "linesA":   f"{lines_a[0]} - {lines_a[1]}",
+            "fileB":    block.get("file_b", ""),
+            "linesB":   f"{lines_b[0]} - {lines_b[1]}",
+            "codeA":    block.get("code_a", ""),
+            "codeB":    block.get("code_b", ""),
+        })
+
+    return {
+        "submissionA":                  result.get("submission_a", "A"),
+        "submissionB":                  result.get("submission_b", "B"),
+        "language":                     (result.get("language_detected") or "unknown").upper(),
+        "similarityScore":              round(final * 100, 1),
+        "similarityLevel":              risk,
+        "alterationTechniquesDetected": [_FLAG_LABELS.get(f, f) for f in flags],
+        "sections":                     len(evidence),
+        "High":                         high,
+        "Medium":                       medium,
+        "Low":                          low,
+        "matches":                      matches,
+        "fullCodeA":                    result.get("original_sources_a", {}),
+        "fullCodeB":                    result.get("original_sources_b", {}),
+    }

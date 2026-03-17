@@ -1,14 +1,21 @@
 """
-K-gram fingerprinting with winnowing.
+engine/fingerprint/kgrams.py
 
-The winnowing algorithm selects a representative subset of k-gram hashes.
-Guarantee: if two submissions share a common token sequence of length
->= k + window - 1, at least one shared fingerprint will be selected.
+K-gram fingerprinting using the Winnowing algorithm.
 
-This means:
-  k=8, window=4 → any shared sequence of 11+ tokens WILL be caught.
-  Typical student code has ~3 tokens per logical line, so that's
-  roughly 4 lines of identical logic — a good detection threshold.
+The idea: slide a window over all consecutive k-token sequences (k-grams),
+hash each one, then keep only the minimum hash from each window position.
+This gives a compact but representative set of fingerprints.
+
+The key guarantee: if two submissions share any common token sequence of
+length >= k + window - 1, at least one matching fingerprint is guaranteed
+to be selected from both. With k=10 and window=5 (the engine's default),
+that means any shared run of 14+ tokens will definitely be caught —
+roughly 4-5 lines of identical logic.
+
+build_fingerprints() keeps every k-gram (used for method-level chunk
+comparison). winnow() applies the selection window (used for global
+submission-level comparison).
 """
 
 from typing import Dict, List, Tuple

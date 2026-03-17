@@ -1,3 +1,17 @@
+"""
+engine/similarity/scores.py
+
+Three similarity metrics used to compare two sets of fingerprints.
+
+Jaccard is the standard set overlap measure. Dice is similar but
+slightly more generous to submissions of equal size. Containment
+is the most important one for catching partial plagiarism — it asks
+how much of the smaller submission appears in the larger one, which
+Jaccard dilutes when one student adds a lot of their own code on top.
+
+weighted_score() combines all three into a single final score.
+"""
+
 from typing import Dict, List
 
 

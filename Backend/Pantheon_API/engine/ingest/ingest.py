@@ -1,3 +1,15 @@
+"""
+engine/ingest/ingest.py
+
+Handles everything needed to turn a raw student submission into a set of
+source files the engine can process.
+
+Takes a ZIP archive or a single source file, extracts it safely into a
+working directory, filters out non-source files, and detects the primary
+language. Safety checks include ZIP bomb detection, path traversal
+prevention, nested ZIP depth limits, and per-file size limits.
+"""
+
 import os
 import shutil
 import stat

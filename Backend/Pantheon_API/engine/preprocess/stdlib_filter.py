@@ -45,6 +45,21 @@ _java_main_re = re.compile(
     re.MULTILINE,
 )
 
+# Single-line null guard returns — every student writes these in recursive methods.
+# e.g. `if (node == null) return null;`  /  `if (node == null) return 0;`
+# These are structurally mandated by the assignment and identical across all submissions.
+_java_null_guard_re = re.compile(
+    r"^[ \t]*if\s*\(\s*\w+\s*==\s*null\s*\)\s*return(?:\s+(?:null|false|true|0|-1|0\.0))?\s*;[ \t]*$",
+    re.MULTILINE,
+)
+
+# Constructor this-assignments: `this.field = param;`
+# Uniform in every OOP assignment regardless of field/param names.
+_java_this_assign_re = re.compile(
+    r"^[ \t]*this\s*\.\s*\w+\s*=\s*\w+\s*;[ \t]*$",
+    re.MULTILINE,
+)
+
 
 def filter_java_boilerplate(text: str) -> str:
     # NOTE: _java_sysout_re and _java_main_re are intentionally NOT applied here.
@@ -126,6 +141,13 @@ _cpp_using_ns_re = re.compile(
 # Covers: main(), main(void), main(int argc, char* argv[]), etc.
 _c_main_re = re.compile(
     r"^[ \t]*(?:int|void)[ \t]+main[ \t]*\([^{;\n]*\)[ \t]*\{?[ \t]*$",
+    re.MULTILINE,
+)
+
+# Single-line NULL guard returns — structurally mandated in every pointer-based C/C++ implementation.
+# e.g. `if (node == NULL) return NULL;`  /  `if (ptr == NULL) return 0;`
+_c_null_guard_re = re.compile(
+    r"^[ \t]*if\s*\(\s*\w+\s*==\s*NULL\s*\)\s*return(?:\s+(?:NULL|false|true|0|-1))?\s*;[ \t]*$",
     re.MULTILINE,
 )
 
@@ -266,17 +288,23 @@ def blank_output_boilerplate(text: str, lang: str) -> str:
     if lang == "java":
         text = _java_sysout_re.sub("", text)
         text = _java_main_re.sub("", text)
+        text = _java_null_guard_re.sub("", text)
+        text = _java_this_assign_re.sub("", text)
     elif lang in ("c", "cpp", "c_or_cpp"):
         text = _c_stdio_call_re.sub("", text)
         text = _cpp_stream_re.sub("", text)
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
+        text = _c_null_guard_re.sub("", text)
     elif lang == "mixed":
         text = _java_sysout_re.sub("", text)
         text = _java_main_re.sub("", text)
+        text = _java_null_guard_re.sub("", text)
+        text = _java_this_assign_re.sub("", text)
         text = _c_stdio_call_re.sub("", text)
         text = _cpp_stream_re.sub("", text)
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
-    # python / javascript / typescript — no output-boilerplate blanking needed
+        text = _c_null_guard_re.sub("", text)
+    # python / javascript / typescript — no structural boilerplate blanking needed
     return text
