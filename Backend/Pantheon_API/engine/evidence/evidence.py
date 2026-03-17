@@ -1,3 +1,14 @@
+"""
+engine/evidence/evidence.py
+
+Builds the list of matching code blocks that the instructor sees in the report.
+
+For every fingerprint hash shared between two submissions, we find the token
+positions in each, convert those to original file line numbers via the source
+map, and merge nearby matches into contiguous blocks. Each block gets a
+match strength rating (high/medium/low) based on how many tokens it spans.
+"""
+
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from engine.tokenize.lex import Token
@@ -208,8 +219,11 @@ def build_evidence(
         if a_span < 3 or b_span < 3:
             continue
 
-        # rough token count for this block
-        token_count = (a2 - a1 + 1) * 3  # ~3 tokens per line average estimate
+        # rough token count for this block.
+        # ~8 tokens per line is a realistic average for typed languages (Java/C/C++).
+        # The old estimate of 3 was too low — it caused real algorithm blocks to
+        # score as LOW even when they clearly contained non-trivial copied logic.
+        token_count = (a2 - a1 + 1) * 8
 
         evidence_blocks.append({
             "file_a":         file_a,

@@ -1,14 +1,16 @@
 """
-Method-level chunk extraction and similarity scoring.
+engine/similarity/chunk.py
 
-Extracts function/method bodies from normalized token streams and computes
-pairwise similarity between them. Catches code-reordering at the method
-level where overall k-gram scores are diluted by order differences.
+Method-level similarity scoring.
 
-Why this matters:
-  A student may copy another submission but reorder the methods so that the
-  sequential fingerprint positions differ. Global Jaccard/Containment gets
-  diluted, but comparing each method independently recovers the signal.
+Extracts individual method/function bodies from the token stream and
+compares each method in submission A against every method in submission B.
+The best-matching pair for each method is used in a weighted average.
+
+Why this is needed: if a student copies code but shuffles the method order,
+the global fingerprint score gets diluted because shared fingerprints appear
+at very different positions. Comparing methods one-by-one bypasses that
+and recovers the real similarity signal.
 """
 
 from typing import Dict, List

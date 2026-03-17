@@ -43,11 +43,19 @@ def detect_obfuscation(
     from engine.fingerprint.kgrams import build_fingerprints
     from engine.similarity.scores import jaccard
 
-    fp_a_raw = build_fingerprints(tok_a_raw, k=8)
-    fp_b_raw = build_fingerprints(tok_b_raw, k=8)
+    fp_a_raw    = build_fingerprints(tok_a_raw,  k=8)
+    fp_b_raw    = build_fingerprints(tok_b_raw,  k=8)
+    # Build k=8 normalized fingerprints for score-based gates and identifier
+    # renaming detection.  fp_a_norm/fp_b_norm use k=10 (the engine's detection
+    # k), which yields a lower Jaccard score and would suppress flags.  Using
+    # the same k=8 for both raw and norm ensures the comparison is fair and the
+    # 0.3 thresholds are meaningful.  fp_a_norm (k=10) is still used below for
+    # the position-based code_reordering check where larger k is preferable.
+    fp_a_norm_8 = build_fingerprints(tok_a_norm, k=8)
+    fp_b_norm_8 = build_fingerprints(tok_b_norm, k=8)
 
-    raw_score  = jaccard(fp_a_raw, fp_b_raw)
-    norm_score = jaccard(fp_a_norm, fp_b_norm)
+    raw_score  = jaccard(fp_a_raw,    fp_b_raw)
+    norm_score = jaccard(fp_a_norm_8, fp_b_norm_8)
 
     # ── 1. Identifier Renaming ────────────────────────────────────────
     # Reasoning: if the normalized fingerprints match much better than the
