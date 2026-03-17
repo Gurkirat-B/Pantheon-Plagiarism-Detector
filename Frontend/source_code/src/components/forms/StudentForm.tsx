@@ -17,6 +17,7 @@ import { useState } from "react";
 import ToggleFormButton from "./ToggleFormButton";
 import { loginFormSchema } from "./formSchema";
 import { useRouter } from "next/navigation";
+import { CheckResultDialog } from "./CheckResultDialog";
 
 const studentFormSchema = loginFormSchema.extend({
   key: z.string().trim().min(3, "Key must be at least 3 characters."),
@@ -166,9 +167,7 @@ export default function StudentForm({
         <div className="text-base">
           <p>
             Want to check the similarity results?{" "}
-            <span className="cursor-pointer font-medium underline transition-opacity hover:opacity-70">
-              Click here
-            </span>
+            <CheckResultDialog />
           </p>
         </div>
       </form>
