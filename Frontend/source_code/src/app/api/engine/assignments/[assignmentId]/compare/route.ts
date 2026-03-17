@@ -44,12 +44,9 @@ export async function POST(
       );
     }
 
-    // Backend returns plain text — forward as-is
-    const text = await res.text();
-    return new NextResponse(text, {
-      status: 200,
-      headers: { "Content-Type": "text/plain" },
-    });
+    // Backend now returns JSON — forward directly
+    const data = await res.json();
+    return NextResponse.json(data, { status: 200 });
   } catch {
     return NextResponse.json({ message: "Internal server error." }, { status: 500 });
   }

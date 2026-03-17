@@ -13,6 +13,8 @@ import {
   ShieldAlert,
   ChevronDown,
   ChevronUp,
+  Layers,
+  FileCode,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,14 +28,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { LoadingButton } from "@/components/LoadingButton";
 
 import type { AssignmentDetail, CourseInfo, Submission } from "./page";
 import {
-  parseReport,
+  mapReport,
+  buildHighlightMap,
   type ComparisonReport,
   type MatchSeverity,
-} from "@/lib/parse_report";
-import { LoadingButton } from "@/components/LoadingButton";
+  type CodeMatch,
+} from "@/lib/report_types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,44 +59,41 @@ function formatDateTime(dateStr: string) {
 
 function getSeverityClass(severity: MatchSeverity) {
   switch (severity) {
-    case "HIGH":
-      return "border-red-200 bg-red-50 text-red-700";
-    case "MEDIUM":
-      return "border-orange-200 bg-orange-50 text-orange-700";
-    case "LOW":
-      return "border-yellow-200 bg-yellow-50 text-yellow-700";
+    case "HIGH":   return "border-red-200 bg-red-50 text-red-700";
+    case "MEDIUM": return "border-orange-200 bg-orange-50 text-orange-700";
+    case "LOW":    return "border-yellow-200 bg-yellow-50 text-yellow-700";
+  }
+}
+
+function getHighlightBg(severity: MatchSeverity) {
+  switch (severity) {
+    case "HIGH":   return "bg-red-900/40";
+    case "MEDIUM": return "bg-orange-900/40";
+    case "LOW":    return "bg-yellow-900/30";
   }
 }
 
 function getLevelColor(level: string) {
   switch (level) {
-    case "CRITICAL":
-      return "text-red-600";
-    case "HIGH":
-      return "text-orange-500";
-    case "MEDIUM":
-      return "text-yellow-600";
-    default:
-      return "text-emerald-600";
+    case "CRITICAL": return "text-red-600";
+    case "HIGH":     return "text-orange-500";
+    case "MEDIUM":   return "text-yellow-600";
+    default:         return "text-emerald-600";
   }
 }
 
 function getLevelBg(level: string) {
   switch (level) {
-    case "CRITICAL":
-      return "bg-red-50 border-red-200";
-    case "HIGH":
-      return "bg-orange-50 border-orange-200";
-    case "MEDIUM":
-      return "bg-yellow-50 border-yellow-200";
-    default:
-      return "bg-emerald-50 border-emerald-200";
+    case "CRITICAL": return "bg-red-50 border-red-200";
+    case "HIGH":     return "bg-orange-50 border-orange-200";
+    case "MEDIUM":   return "bg-yellow-50 border-yellow-200";
+    default:         return "bg-emerald-50 border-emerald-200";
   }
 }
 
-// ─── Code Panel ───────────────────────────────────────────────────────────────
+// ─── Match Code Panel (used in match blocks) ──────────────────────────────────
 
-function CodePanel({
+function MatchCodePanel({
   label,
   fileName,
   lines,
@@ -123,14 +124,81 @@ function CodePanel({
   );
 }
 
+// ─── Full Code Panel (used in full code view, with line highlights) ───────────
+
+function FullCodePanel({
+  label,
+  fileName,
+  code,
+  highlightMap,
+}: {
+  label: string;
+  fileName: string;
+  code: string;
+  highlightMap: Map<number, MatchSeverity>;
+}) {
+  const lines = code.split("\n");
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-slate-700">
+      <div className="border-b border-slate-700 bg-slate-800 px-4 py-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+          {label}
+        </p>
+        <p className="mt-0.5 font-mono text-sm font-semibold text-slate-100">
+          {fileName}
+        </p>
+        <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-3 rounded-sm bg-red-900/60" />
+            High
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-3 rounded-sm bg-orange-900/60" />
+            Medium
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-3 rounded-sm bg-yellow-900/50" />
+            Low
+          </span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto bg-slate-900">
+        <table className="w-full font-mono text-sm">
+          <tbody>
+            {lines.map((line, idx) => {
+              const lineNum = idx + 1;
+              const severity = highlightMap.get(lineNum);
+              return (
+                <tr
+                  key={lineNum}
+                  className={severity ? getHighlightBg(severity) : ""}
+                >
+                  {/* Line number gutter */}
+                  <td className="w-10 select-none px-3 py-0 text-right text-slate-600 align-top">
+                    {lineNum}
+                  </td>
+                  {/* Code */}
+                  <td className="px-3 py-0 leading-relaxed text-emerald-400">
+                    <pre className="whitespace-pre">{line}</pre>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Match Block ──────────────────────────────────────────────────────────────
 
-function MatchBlock({ match }: { match: ComparisonReport["matches"][number] }) {
+function MatchBlock({ match }: { match: CodeMatch }) {
   const [expanded, setExpanded] = useState(match.severity === "HIGH");
 
   return (
     <div className={`rounded-lg border ${getSeverityClass(match.severity)}`}>
-      {/* Block header */}
       <button
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -147,9 +215,7 @@ function MatchBlock({ match }: { match: ComparisonReport["matches"][number] }) {
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>
-            A: lines {match.linesA} · B: lines {match.linesB}
-          </span>
+          <span>A: lines {match.linesA} · B: lines {match.linesB}</span>
           {expanded ? (
             <ChevronUp className="h-4 w-4" />
           ) : (
@@ -158,19 +224,18 @@ function MatchBlock({ match }: { match: ComparisonReport["matches"][number] }) {
         </div>
       </button>
 
-      {/* Expandable code panels */}
       {expanded && (
         <div
           className="border-current/10 flex gap-3 border-t p-4"
           style={{ minHeight: "200px" }}
         >
-          <CodePanel
+          <MatchCodePanel
             label="Submission A"
             fileName={match.fileA}
             lines={match.linesA}
             code={match.codeA}
           />
-          <CodePanel
+          <MatchCodePanel
             label="Submission B"
             fileName={match.fileB}
             lines={match.linesB}
@@ -184,6 +249,8 @@ function MatchBlock({ match }: { match: ComparisonReport["matches"][number] }) {
 
 // ─── Comparison Dialog ────────────────────────────────────────────────────────
 
+type ViewMode = "blocks" | "fullcode";
+
 function ComparisonDialog({
   open,
   onClose,
@@ -193,18 +260,61 @@ function ComparisonDialog({
   onClose: () => void;
   report: ComparisonReport | null;
 }) {
+  const [viewMode, setViewMode] = useState<ViewMode>("blocks");
+
   if (!report) return null;
+
+  // Get file names from fullCode objects
+  const fileNameA = Object.keys(report.fullCodeA)[0] ?? "Submission A";
+  const fileNameB = Object.keys(report.fullCodeB)[0] ?? "Submission B";
+  const fullCodeA = report.fullCodeA[fileNameA] ?? "";
+  const fullCodeB = report.fullCodeB[fileNameB] ?? "";
+
+  // Build highlight maps for full code view
+  const highlightMapA = buildHighlightMap(report.matches, fileNameA, "A");
+  const highlightMapB = buildHighlightMap(report.matches, fileNameB, "B");
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden p-0">
+        {/* Header */}
         <DialogHeader className="border-b px-6 py-5">
-          <DialogTitle className="text-xl">
-            Plagiarism Detection Report
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {report.submissionA} vs {report.submissionB} · {report.language}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle className="text-xl">
+                Plagiarism Detection Report
+              </DialogTitle>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {report.submissionA} vs {report.submissionB} · {report.language}
+              </p>
+            </div>
+
+            {/* View toggle */}
+            <div className="flex items-center rounded-lg border bg-muted p-1">
+              <button
+                onClick={() => setViewMode("blocks")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "blocks"
+                    ? "bg-white text-slate-800 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Match Blocks
+              </button>
+              <button
+                onClick={() => setViewMode("fullcode")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "fullcode"
+                    ? "bg-white text-slate-800 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <FileCode className="h-3.5 w-3.5" />
+                Full Code
+              </button>
+            </div>
+          </div>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
@@ -218,15 +328,11 @@ function ComparisonDialog({
                   className={`h-6 w-6 ${getLevelColor(report.plagiarismLevel)}`}
                 />
                 <div>
-                  <p
-                    className={`text-2xl font-bold ${getLevelColor(report.plagiarismLevel)}`}
-                  >
+                  <p className={`text-2xl font-bold ${getLevelColor(report.plagiarismLevel)}`}>
                     {report.similarityScore}% Similarity
                   </p>
-                  <p
-                    className={`text-sm font-medium ${getLevelColor(report.plagiarismLevel)}`}
-                  >
-                    {report.plagiarismLevel} ({report.levelThreshold})
+                  <p className={`text-sm font-medium ${getLevelColor(report.plagiarismLevel)}`}>
+                    {report.plagiarismLevel}
                   </p>
                 </div>
               </div>
@@ -262,15 +368,40 @@ function ComparisonDialog({
             </div>
           )}
 
-          {/* ── Matching blocks ── */}
-          <div className="mx-6 my-5 space-y-3">
-            <p className="text-sm font-semibold text-slate-700">
-              Matching Code Sections ({report.totalBlocks} blocks)
-            </p>
-            {report.matches.map((match) => (
-              <MatchBlock key={match.index} match={match} />
-            ))}
-          </div>
+          {/* ── Match Blocks view ── */}
+          {viewMode === "blocks" && (
+            <div className="mx-6 my-5 space-y-3">
+              <p className="text-sm font-semibold text-slate-700">
+                Matching Code Sections ({report.totalBlocks} blocks)
+              </p>
+              {report.matches.map((match) => (
+                <MatchBlock key={match.index} match={match} />
+              ))}
+            </div>
+          )}
+
+          {/* ── Full Code view ── */}
+          {viewMode === "fullcode" && (
+            <div className="mx-6 my-5">
+              <p className="mb-3 text-sm font-semibold text-slate-700">
+                Full Submissions — highlighted lines indicate matching sections
+              </p>
+              <div className="flex gap-3" style={{ minHeight: "500px" }}>
+                <FullCodePanel
+                  label="Submission A"
+                  fileName={fileNameA}
+                  code={fullCodeA}
+                  highlightMap={highlightMapA}
+                />
+                <FullCodePanel
+                  label="Submission B"
+                  fileName={fileNameB}
+                  code={fullCodeB}
+                  highlightMap={highlightMapB}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -305,18 +436,14 @@ function SubmissionRow({
           : "bg-white hover:bg-slate-50"
       }`}
     >
-      {/* Left */}
       <div className="flex items-center gap-4">
-        <div
-          className={`transition-opacity ${showCheckbox ? "opacity-100" : "opacity-0"}`}
-        >
+        <div className={`transition-opacity ${showCheckbox ? "opacity-100" : "opacity-0"}`}>
           <Checkbox
             checked={isSelected}
             onCheckedChange={onSelect}
             aria-label="Select submission"
           />
         </div>
-
         <div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-semibold text-slate-800">
@@ -343,7 +470,6 @@ function SubmissionRow({
         </div>
       </div>
 
-      {/* Right */}
       <div className="flex items-center gap-3">
         {comparisonScore != null && (
           <span
@@ -351,19 +477,14 @@ function SubmissionRow({
               comparisonScore >= 60
                 ? "text-red-500"
                 : comparisonScore >= 30
-                  ? "text-orange-400"
-                  : "text-emerald-500"
+                ? "text-orange-400"
+                : "text-emerald-500"
             }`}
           >
             {comparisonScore}%
           </span>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onDetail}
-          className="gap-1.5"
-        >
+        <Button size="sm" variant="outline" onClick={onDetail} className="gap-1.5">
           <Code2 className="h-3.5 w-3.5" />
           Detail
         </Button>
@@ -385,12 +506,8 @@ export function AssignmentView({
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [comparing, setComparing] = useState(false);
-
-  // Comparison result lives in state — no persistence yet
   const [report, setReport] = useState<ComparisonReport | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-
-  // Track which submission pair was last compared so we can show their score
   const [comparedPair, setComparedPair] = useState<{
     idA: string;
     idB: string;
@@ -427,17 +544,14 @@ export function AssignmentView({
             submission_a_id: idA,
             submission_b_id: idB,
           }),
-        },
+        }
       );
 
-      if (res.status === 401) {
-        router.push("/");
-        return;
-      }
+      if (res.status === 401) { router.push("/"); return; }
       if (!res.ok) throw new Error();
 
-      const text = await res.text();
-      const parsed = parseReport(text);
+      const json = await res.json();
+      const parsed = mapReport(json);
       setReport(parsed);
       setComparedPair({ idA, idB, score: parsed.similarityScore });
       setDialogOpen(true);
@@ -448,9 +562,7 @@ export function AssignmentView({
     }
   };
 
-  // Opens the dialog for the last comparison result
   const handleDetail = (submission: Submission) => {
-    // Only open if this submission was part of the last comparison
     const isPartOfComparison =
       comparedPair &&
       (comparedPair.idA === submission.submission_id ||
@@ -459,16 +571,12 @@ export function AssignmentView({
     if (isPartOfComparison && report) {
       setDialogOpen(true);
     }
-    // If no comparison yet, detail does nothing (button is still visible but inert)
-    // This will be extended when comparison storage is added
   };
 
   const selectedCount = selectedIds.size;
   const canTriggerCompare = selectedCount === 2;
-
-  // ── Stats ──────────────────────────────────────────────────────────────────
   const avgScore = report ? report.similarityScore : null;
-  const highRisk = report && report.plagiarismLevel === "CRITICAL" ? 1 : 0;
+  const highRisk = report && (report.plagiarismLevel === "CRITICAL" || report.plagiarismLevel === "HIGH") ? 1 : 0;
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 min-[2000px]:max-w-[2000px]">
@@ -507,9 +615,7 @@ export function AssignmentView({
               <Users className="h-5 w-5 text-slate-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-800">
-                {submissions.length}
-              </p>
+              <p className="text-2xl font-bold text-slate-800">{submissions.length}</p>
               <p className="text-sm text-muted-foreground">Total Submissions</p>
             </div>
           </CardContent>
@@ -536,9 +642,7 @@ export function AssignmentView({
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-800">{highRisk}</p>
-              <p className="text-sm text-muted-foreground">
-                High Risk (&ge;60%)
-              </p>
+              <p className="text-sm text-muted-foreground">High Risk (&ge;60%)</p>
             </div>
           </CardContent>
         </Card>
@@ -553,9 +657,8 @@ export function AssignmentView({
               <span className="text-slate-500">{assignment.title}</span>
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {submissions.length} submission
-              {submissions.length !== 1 ? "s" : ""} · Select exactly 2 to
-              compare
+              {submissions.length} submission{submissions.length !== 1 ? "s" : ""}{" "}
+              · Select exactly 2 to compare
             </p>
           </div>
 
@@ -596,9 +699,7 @@ export function AssignmentView({
                   isSelected={selectedIds.has(submission.submission_id)}
                   onSelect={() => toggleSelect(submission.submission_id)}
                   onDetail={() => handleDetail(submission)}
-                  comparisonScore={
-                    isPartOfComparison ? comparedPair!.score : null
-                  }
+                  comparisonScore={isPartOfComparison ? comparedPair!.score : null}
                 />
               );
             })
@@ -606,7 +707,6 @@ export function AssignmentView({
         </div>
       </div>
 
-      {/* Comparison dialog */}
       <ComparisonDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
