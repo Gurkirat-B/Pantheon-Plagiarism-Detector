@@ -155,16 +155,16 @@ export function CheckResultDialog() {
       //     });
       //     return;
       //   }
-      const result = { similarity_score: Number(data.submission_id) };
       // Close lookup dialog before opening result
       setLookupOpen(false);
       form.reset();
-      if (result.similarity_score === result.similarity_score) {
-        setScore(result.similarity_score);
-        setScoreOpen(true);
-      } else {
-        setPendingOpen(true);
-      }
+      // if (result.similarity_score === result.similarity_score) {
+      //   setScore(result.similarity_score);
+      //   setScoreOpen(true);
+      // } else {
+      //   setPendingOpen(true);
+      // }
+      setPendingOpen(true);
     } catch {
       form.setError("root", {
         type: "manual",
