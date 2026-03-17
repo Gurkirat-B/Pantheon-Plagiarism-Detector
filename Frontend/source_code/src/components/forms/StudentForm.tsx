@@ -66,6 +66,7 @@ export default function StudentForm({
       }
       sessionStorage.setItem("assignmentKey", values.key);
       router.push("/upload");
+      router.refresh();
     } catch {
       studentForm.setError("root", {
         type: "manual",

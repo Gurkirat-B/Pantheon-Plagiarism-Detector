@@ -269,13 +269,6 @@ export default function FileUpload() {
 
                 <Separator className="my-6" />
                 <div className="flex items-center justify-end space-x-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => form.reset()}
-                  >
-                    Cancel
-                  </Button>
                   <LoadingButton loading={loading} type="submit">
                     Submit
                   </LoadingButton>
