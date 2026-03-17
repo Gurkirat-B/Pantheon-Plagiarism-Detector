@@ -1,3 +1,4 @@
+import json
 import tempfile
 from pathlib import Path
 from pydantic import BaseModel
@@ -181,14 +182,25 @@ def compare_two_submissions(
 
         with get_db_connection() as conn:
             # 4) store similarity result
-            conn.execute(
+            result_row = conn.execute(
                 """
                 INSERT INTO similarity_results (
                     run_id, score, left_submission_id, right_submission_id
                 )
                 VALUES (%s, %s, %s, %s)
+                RETURNING result_id
                 """,
                 (run_id, score, str(body.submission_a_id), str(body.submission_b_id)),
+            )
+            result_id = result_row[0]
+
+            # 4b) store JSON report as evidence
+            conn.execute(
+                """
+                INSERT INTO similarity_evidence (result_id, evidence_json)
+                VALUES (%s, %s::jsonb)
+                """,
+                (result_id, json.dumps(json_report)),
             )
 
             # 5) mark run complete
@@ -228,7 +240,7 @@ def get_similarity_score(
     submission_b_id: UUID,
     user: dict = Depends(get_current_user),
 ):
-    _require_professor(user)
+    #_require_professor(user)
 
     if submission_a_id == submission_b_id:
         raise HTTPException(status_code=400, detail="submission_a_id and submission_b_id must be different")
@@ -256,4 +268,54 @@ def get_similarity_score(
         "run_id": str(row[1]),
         "score": float(row[2]),
         "created_at": row[3].isoformat() if row[3] else None,
+    }
+
+@router.get("/similarity-report")
+def get_similarity_report(
+    submission_a_id: UUID,
+    submission_b_id: UUID,
+    user: dict = Depends(get_current_user),
+):
+    _require_professor(user)
+
+    if submission_a_id == submission_b_id:
+        raise HTTPException(status_code=400, detail="submission_a_id and submission_b_id must be different")
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                sr.result_id,
+                sr.score,
+                sr.created_at,
+                se.evidence_json
+            FROM similarity_results sr
+            LEFT JOIN similarity_evidence se
+              ON se.result_id = sr.result_id
+            WHERE LEAST(sr.left_submission_id, sr.right_submission_id) = LEAST(%s::uuid, %s::uuid)
+              AND GREATEST(sr.left_submission_id, sr.right_submission_id) = GREATEST(%s::uuid, %s::uuid)
+            ORDER BY sr.created_at DESC, se.created_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            (
+                str(submission_a_id), str(submission_b_id),
+                str(submission_a_id), str(submission_b_id),
+            ),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No similarity report found for specified submission IDs")
+
+    # evidence_json may already be a dict (jsonb) depending on your driver
+    report_json = row[3]
+    if report_json is None:
+        raise HTTPException(status_code=404, detail="Similarity result exists but no evidence report is stored")
+
+    return {
+        "submission_a_id": str(submission_a_id),
+        "submission_b_id": str(submission_b_id),
+        "result_id": str(row[0]),
+        "score": float(row[1]),
+        "created_at": row[2].isoformat() if row[2] else None,
+        "report": report_json,
     }
