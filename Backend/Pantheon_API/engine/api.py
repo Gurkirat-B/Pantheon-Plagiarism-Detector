@@ -205,6 +205,11 @@ def compare(
             line_similarity_a=line_similarity_b,
         )
         
+        # Load original source files for fullCodeA/fullCodeB in the JSON response.
+        # Must be called here while dir_a/dir_b still exist.
+        original_sources_a = _load_original_sources(dir_a, proc_a["canon"].source_map)
+        original_sources_b = _load_original_sources(dir_b, proc_b["canon"].source_map)
+
         # Get full source code from canonical text
         source_code_a = proc_a["canon"].canonical_text
         source_code_b = proc_b["canon"].canonical_text
@@ -228,6 +233,8 @@ def compare(
             "error":             None,
             "source_code_a":     source_code_a,
             "source_code_b":     source_code_b,
+            "original_sources_a": original_sources_a,
+            "original_sources_b": original_sources_b,
             "line_mapping":      line_mapping,
             "line_mapping_b":    line_mapping_b,
             "source_with_mapping": source_with_mapping,
@@ -403,6 +410,35 @@ def _get_template_fingerprints(template_path: Union[str, Path], work_dir: Path) 
         return proc["fp"]
     except Exception:
         return {}
+
+
+def _load_original_sources(work_dir: Path, source_map) -> dict:
+    """
+    Load the original (pre-canonicalization) content of every source file
+    referenced in the source map.  Returns {relative_filename: full_text}.
+
+    Called while work_dir still exists (inside the compare() try block), so
+    file access is guaranteed.  Returns plain strings — safe after temp cleanup.
+    Any file that can't be read is silently skipped (graceful degradation).
+    """
+    result = {}
+    for entry in source_map:
+        fname = entry.original_file
+        if fname in result:
+            continue
+        try:
+            matches = list(work_dir.rglob(Path(fname).name))
+            if not matches:
+                continue
+            best = matches[0]
+            for m in matches:
+                if str(m).replace("\\", "/").endswith(fname.replace("\\", "/")):
+                    best = m
+                    break
+            result[fname] = best.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+    return result
 
 
 def _subtract_fingerprints(fp: dict, template_fp: dict) -> dict:

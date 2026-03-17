@@ -1,4 +1,3 @@
-import re
 import tempfile
 from pathlib import Path
 from pydantic import BaseModel
@@ -6,14 +5,14 @@ from uuid import UUID
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
 
 from engine import ENGINE_VERSION
 from database import get_db_connection
 from auth import get_current_user
 from config import S3_BUCKET
 from engine import compare as engine_compare
-from format_output import format_report_for_backend
+from format_output import format_report_as_json
+# from format_output import format_report_for_backend  # plain-text version, kept for reference
 
 router = APIRouter(prefix="/engine", tags=["engine"])
 s3 = boto3.client("s3")
@@ -28,14 +27,13 @@ def _require_professor(user: dict):
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Professor role required")
 
-def _extract_similarity_score(report_text: str) -> float:
-    """
-    Parse 'SIMILARITY SCORE      100.0%' from report text.
-    """
-    m = re.search(r"SIMILARITY SCORE\s+([0-9]+(?:\.[0-9]+)?)%", report_text)
-    if not m:
-        raise ValueError("Could not parse similarity score from engine report")
-    return float(m.group(1))
+# def _extract_similarity_score(report_text: str) -> float:
+#     """Parse 'SIMILARITY SCORE      100.0%' from plain-text report."""
+#     import re
+#     m = re.search(r"SIMILARITY SCORE\s+([0-9]+(?:\.[0-9]+)?)%", report_text)
+#     if not m:
+#         raise ValueError("Could not parse similarity score from engine report")
+#     return float(m.group(1))
     
 @router.get("/assignments/{assignment_id}/submissions")
 def list_submissions(assignment_id: UUID, user: dict = Depends(get_current_user)):
@@ -178,8 +176,8 @@ def compare_two_submissions(
             s3.download_file(b_info["bucket"], b_info["key"], str(b_zip))
 
             raw_result = engine_compare(str(a_zip), str(b_zip))
-            report_text = format_report_for_backend(raw_result)
-            score = _extract_similarity_score(report_text)        
+            json_report = format_report_as_json(raw_result)
+            score = json_report["similarityScore"] / 100.0
 
         with get_db_connection() as conn:
             # 4) store similarity result
@@ -203,58 +201,12 @@ def compare_two_submissions(
                 (run_id,),
             )
             conn.commit()
-        
-                
-        # --- PREVIOUS JSON RESPONSE (commented out — revert by uncommenting below and removing the PlainTextResponse return) ---
-        # score_decimal = result.get("scores", {}).get("weighted_final", 0.0)
-        # score_percentage = f"{round(score_decimal * 100, 1)}%"
-        # flag_labels = {
-        #     "identifier_renaming":  "Variable / identifier renaming detected",
-        #     "loop_type_swap":       "Loop type swap detected (for <> while <> do-while)",
-        #     "literal_substitution": "Constant / literal values substituted",
-        #     "dead_code_insertion":  "Dead code insertion detected",
-        #     "code_reordering":      "Code block reordering detected",
-        #     "switch_to_ifelse":     "Switch <> if-else conversion detected",
-        #     "ternary_to_ifelse":    "Ternary <> if-else conversion detected",
-        #     "exception_wrapping":   "Try-catch exception wrapping added",
-        #     "for_each_to_indexed":  "For-each loop converted to indexed for loop",
-        # }
-        # alterations_detected = [flag_labels.get(f, f) for f in result.get("obfuscation_flags", [])]
-        # matching_sections = []
-        # for block in result.get("evidence", []):
-        #     matching_sections.append({
-        #         "match_strength": block.get("strength", block.get("match_strength", "medium")).upper(),
-        #         "file_a": block.get("file_a", ""),
-        #         "lines_a": block.get("lines_a", []),
-        #         "file_b": block.get("file_b", ""),
-        #         "lines_b": block.get("lines_b", []),
-        #         "code_a": block.get("code_a", ""),
-        #         "code_b": block.get("code_b", ""),
-        #     })
-        # return {
-        #     "formatted_report": formatted_report,
-        #     "similarity_score": score_percentage,
-        #     "alterations_detected": alterations_detected,
-        #     "assignment_id": result["assignment_id"],
-        #     "left_submission_id": result["left_submission_id"],
-        #     "right_submission_id": result["right_submission_id"],
-        #     "language": result.get("language_detected", "unknown"),
-        #     "matching_sections": matching_sections,
-        # }
 
-        '''
-        FUTURE — Full Submission View (add these fields to the return dict above when frontend is ready):
-            "source_code_a": result.get("source_code_a", ""),
-            "source_code_b": result.get("source_code_b", ""),
-            "line_mapping":   result.get("line_mapping", []),
-            "line_mapping_b": result.get("line_mapping_b", []),
-        source_code_a / source_code_b -> full text of each submission, split by \n and render line by line.
-        line_mapping  -> flagged lines for submission A: [{ line_a, line_b, color, score, match_count }, ...]
-        line_mapping_b -> same for submission B lines.
-        Frontend builds a { line_number: color } lookup from the mapping, colors flagged lines, leaves rest white.
-        '''
+        # --- PLAIN TEXT RESPONSE (commented out — revert by uncommenting and removing the json_report return) ---
+        # report_text = format_report_for_backend(raw_result)
+        # return PlainTextResponse(report_text)
 
-        return PlainTextResponse(report_text)
+        return json_report
     
     except Exception as e:
         with get_db_connection() as conn:
