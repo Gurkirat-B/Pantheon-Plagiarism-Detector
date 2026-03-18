@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
@@ -15,6 +16,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    assignment_id: UUID | None = None   # required only for students
 
 @router.post("/register")
 def register(body: RegisterRequest):
@@ -50,12 +52,30 @@ def login(body: LoginRequest):
             "SELECT user_id, password_hash, role  FROM users WHERE email = %s",
             (body.email,),
         ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid email")
+        
+        if not verify_password(body.password, row[1]):
+            raise HTTPException(status_code=401, detail="Invalid password")
     
-    if not row:
-        raise HTTPException(status_code=401, detail="Invalid email")
-    
-    if not verify_password(body.password, row[1]):
-        raise HTTPException(status_code=401, detail="Invalid password")
+        user_id = str(row[0])
+        role = row[2]
+        # Student-only assignment existence check
+        if role == "student":
+            if body.assignment_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="assignment_id is required for student login",
+                )
+
+            assignment = conn.execute(
+                "SELECT assignment_id FROM assignments WHERE assignment_id = %s",
+                (str(body.assignment_id),),
+            ).fetchone()
+
+            if not assignment:
+                raise HTTPException(status_code=404, detail="Assignment not found")
 
     token = create_token(str(row[0]), row[2])
     return {"access_token": token, "token_type": "bearer"}

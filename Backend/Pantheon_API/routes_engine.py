@@ -191,7 +191,7 @@ def compare_two_submissions(
                 RETURNING result_id
                 """,
                 (run_id, score, str(body.submission_a_id), str(body.submission_b_id)),
-            )
+            ).fetchone()
             result_id = result_row[0]
 
             # 4b) store JSON report as evidence
@@ -285,9 +285,6 @@ def get_similarity_report(
         row = conn.execute(
             """
             SELECT
-                sr.result_id,
-                sr.score,
-                sr.created_at,
                 se.evidence_json
             FROM similarity_results sr
             LEFT JOIN similarity_evidence se
@@ -307,15 +304,8 @@ def get_similarity_report(
         raise HTTPException(status_code=404, detail="No similarity report found for specified submission IDs")
 
     # evidence_json may already be a dict (jsonb) depending on your driver
-    report_json = row[3]
+    report_json = row[0]
     if report_json is None:
         raise HTTPException(status_code=404, detail="Similarity result exists but no evidence report is stored")
 
-    return {
-        "submission_a_id": str(submission_a_id),
-        "submission_b_id": str(submission_b_id),
-        "result_id": str(row[0]),
-        "score": float(row[1]),
-        "created_at": row[2].isoformat() if row[2] else None,
-        "report": report_json,
-    }
+    return report_json
