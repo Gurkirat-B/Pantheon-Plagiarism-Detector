@@ -16,6 +16,7 @@ Frontend
 - Add timestamps for student submissions in their pop-up
 - Add the feature to download the whole Similarity score
 - Add user guide for the software
+- Add light and dark mode
 
 Engine
 - Ability to set up auto-comparisons as submissions are made 
