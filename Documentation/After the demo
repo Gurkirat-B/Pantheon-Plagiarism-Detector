@@ -21,8 +21,9 @@ Frontend
 - Add logout to student view
 - Add logic to not add an assignment for an old date
 - Remove the fact that when you create a new assignment and click cancel, the information is already there
-- for the detail button in the assignment dashboard, it should show the assignment code, that's it
-- fix the issue where a zip inside a zip doesnt register for the student view file submission
+- For the detail button in the assignment dashboard, it should show the assignment code, that's it
+- fix the issue where a zip inside a zip doesn't register for the student view file submission
+- fix the language selector so it works 
 
 
 Engine
