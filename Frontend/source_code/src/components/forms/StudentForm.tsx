@@ -17,6 +17,7 @@ import { useState } from "react";
 import ToggleFormButton from "./ToggleFormButton";
 import { loginFormSchema } from "./formSchema";
 import { useRouter } from "next/navigation";
+import { CheckResultDialog } from "./CheckResultDialog";
 
 const studentFormSchema = loginFormSchema.extend({
   key: z.string().trim().min(3, "Key must be at least 3 characters."),
@@ -53,6 +54,7 @@ export default function StudentForm({
         body: JSON.stringify({
           email: values.email,
           password: values.password,
+          assignment_id: values.key,
         }),
       });
       const result = await res.json();
@@ -65,6 +67,7 @@ export default function StudentForm({
       }
       sessionStorage.setItem("assignmentKey", values.key);
       router.push("/upload");
+      router.refresh();
     } catch {
       studentForm.setError("root", {
         type: "manual",
@@ -165,10 +168,7 @@ export default function StudentForm({
         </LoadingButton>
         <div className="text-base">
           <p>
-            Want to check the similarity results?{" "}
-            <span className="cursor-pointer font-medium underline transition-opacity hover:opacity-70">
-              Click here
-            </span>
+            Want to check the similarity results? <CheckResultDialog />
           </p>
         </div>
       </form>
