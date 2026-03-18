@@ -15,8 +15,14 @@ Frontend
 - Add email confirmation for submission
 - Add timestamps for student submissions in their pop-up
 - Add the feature to download the whole Similarity score
-- Add user guide for the software
+- Add a user guide for the software
 - Add light and dark mode
+- Add a "my account" to the professor view
+- Add logout to student view
+- Add logic to not add an assignment for an old date
+- Remove the fact that when you create a new assignment and click cancel, the information is already there
+- for the detail button in the assignment dashboard, it should show the assignment code, that's it
+
 
 Engine
 - Ability to set up auto-comparisons as submissions are made 
@@ -25,3 +31,4 @@ Engine
 Backend
 - "List of students" button on Course page
 - Create a folder for previous year submissions
+- add change due date to professor view 
