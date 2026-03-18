@@ -54,6 +54,7 @@ export default function StudentForm({
         body: JSON.stringify({
           email: values.email,
           password: values.password,
+          assignment_id: values.key,
         }),
       });
       const result = await res.json();
@@ -167,8 +168,7 @@ export default function StudentForm({
         </LoadingButton>
         <div className="text-base">
           <p>
-            Want to check the similarity results?{" "}
-            <CheckResultDialog />
+            Want to check the similarity results? <CheckResultDialog />
           </p>
         </div>
       </form>
