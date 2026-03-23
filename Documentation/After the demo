@@ -1,36 +1,49 @@
 After the demo
 
 Frontend
-- Think about api calls for multiple buttons vs load the whole page
-- The instructor to compare past assignments 
-- Add api for course change names
+- Think about api calls for multiple buttons vs load the whole page DONE
 - The code will be COSC 4P02, but the name will be the actual course name for visual purposes 
-- Remove extra settings from assignments api
-- Remove assignments/course/{course_id} api
-- Create a student view to review their submission score after they submit the file
-  - Students will use their submission ID to check their score after (the frontend will create this page)
-- Adding a verification process to know the person accessing the assignment is actually a student
-  - adding a student login page
-- idiot proof submission id that is being copied
-- Add email confirmation for submission
-- Add timestamps for student submissions in their pop-up
-- Add the feature to download the whole Similarity score
-- Add a user guide for the software
-- Add light and dark mode
-- Add a "my account" to the professor view
-- Add logout to student view
-- Add logic to not add an assignment for an old date
-- Remove the fact that when you create a new assignment and click cancel, the information is already there
-- For the detail button in the assignment dashboard, it should show the assignment code, that's it
-- fix the issue where a zip inside a zip doesn't register for the student view file submission
+- Add email confirmation for submission LOW PRIORITY 
+- Add timestamps for logins LOW LOW PRIORITY
+- Add the feature to download the whole Similarity score LOW PRIORITY
+- Add light and dark mode 
+- Add a "my account" to the professor view 
+- Add logic to not add an assignment for an old date 
+- Remove the fact that when you create a new assignment and click cancel, the information is already there 
+- For the detail button in the assignment dashboard, it should show the assignment code fully for that student
 - fix the language selector so it works 
+- "List of students" button on Course page LOW PRIORITY
 
 
 Engine
 - Ability to set up auto-comparisons as submissions are made 
+- fix the issue where a zip inside a zip doesn't register for the student view file submission LOW PRIORITY
+- Creating a test suite 
+- Doing robust testing
 
 
 Backend
 - "List of students" button on Course page
-- Create a folder for previous year submissions
-- add change due date to professor view 
+- Create a folder for previous year submissions HIGH PRIORITY
+- fix the language selector so it works 
+- Add the ability to change the language after an assignment is created 
+- Add api for course change names 
+- The instructor to compare past assignments 
+- Remove extra settings from assignments api
+- Remove assignments/course/{course_id} api
+
+
+
+Not Needed
+- Create a student view to review their submission score after they submit the file
+  - Students will use their submission ID to check their score after (the frontend will create this page) 
+- Adding a verification process to know the person accessing the assignment is actually a student 
+  - adding a student login page
+- idiot proof submission id that is being copied
+- Add timestamps for student submissions in their pop-up
+- Add a user guide for the software 
+- Add logout to student view
+
+
+Espionage
+- ...
