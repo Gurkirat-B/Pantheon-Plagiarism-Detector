@@ -11,8 +11,12 @@ Frontend
 - Add logic to not add an assignment for an old date 
 - Remove the fact that when you create a new assignment and click cancel, the information is already there 
 - For the detail button in the assignment dashboard, it should show the assignment code fully for that student
-- fix the language selector so it works 
 - "List of students" button on Course page LOW PRIORITY
+- Remove student password page
+- Remove student score page
+- Remove student submission id page after submission
+- Remove student assignment successfully submitted page
+- Connect course change api name to UI
 
 
 Engine
@@ -32,7 +36,9 @@ Backend
 - The instructor to compare past assignments 
 - Remove extra settings from assignments api
 - Remove assignments/course/{course_id} api
-
+- Add the feature to download the whole Similarity score LOW PRIORITY
+- Add logic to not add an assignment for an old date 
+- fix the language selector so it works 
 
 
 Not Needed
