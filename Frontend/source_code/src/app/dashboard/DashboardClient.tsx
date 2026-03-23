@@ -150,6 +150,10 @@ export function DashboardClient({
     assignmentId: string;
     form: EditAssignmentForm;
   } | null>(null);
+  const [editAssignmentError, setEditAssignmentError] = useState<string | null>(
+    null,
+  );
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAssignment, setDeletingAssignment] = useState<{
     assignmentId: string;
@@ -213,25 +217,72 @@ export function DashboardClient({
     setEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingAssignment) return;
-    setSelectedCourse((prev) =>
-      prev
-        ? {
-            ...prev,
-            assignments: prev.assignments?.map((a) =>
-              a.assignment_id !== editingAssignment.assignmentId
-                ? a
-                : {
-                    ...a,
-                    title: editingAssignment.form.title,
-                    due_date: editingAssignment.form.dueDate,
-                  },
-            ),
-          }
-        : prev,
-    );
-    setEditDialogOpen(false);
+    setEditAssignmentError(null);
+    setIsSavingAssignment(true);
+    try {
+      const res = await fetch(
+        `/api/assignments/${editingAssignment.assignmentId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editingAssignment.form.title,
+            due_date: new Date(editingAssignment.form.dueDate).toISOString(),
+            language: editingAssignment.form.language,
+          }),
+        },
+      );
+
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      if (!res.ok) throw new Error();
+
+      setSelectedCourse((prev) =>
+        prev
+          ? {
+              ...prev,
+              assignments: prev.assignments?.map((a) =>
+                a.assignment_id !== editingAssignment.assignmentId
+                  ? a
+                  : {
+                      ...a,
+                      title: editingAssignment.form.title,
+                      due_date: editingAssignment.form.dueDate,
+                      language: editingAssignment.form.language,
+                    },
+              ),
+            }
+          : prev,
+      );
+      setCourses((prev) =>
+        prev.map((c) =>
+          c.course_id !== selectedCourse?.course_id
+            ? c
+            : {
+                ...c,
+                assignments: c.assignments?.map((a) =>
+                  a.assignment_id !== editingAssignment.assignmentId
+                    ? a
+                    : {
+                        ...a,
+                        title: editingAssignment.form.title,
+                        due_date: editingAssignment.form.dueDate,
+                        language: editingAssignment.form.language,
+                      },
+                ),
+              },
+        ),
+      );
+      setEditDialogOpen(false);
+    } catch {
+      setEditAssignmentError("Failed to save changes. Please try again.");
+    } finally {
+      setIsSavingAssignment(false);
+    }
   };
 
   const handleOpenDelete = (assignment: Assignment) => {
@@ -604,7 +655,13 @@ export function DashboardClient({
       )}
 
       {/* ── Edit Assignment Dialog ──────────────────────────────────────────── */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) setEditAssignmentError(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Assignment</DialogTitle>
@@ -628,6 +685,28 @@ export function DashboardClient({
               />
             </div>
             <div>
+              <Label className="mb-1.5 block text-sm">Language</Label>
+              <Select
+                value={editingAssignment?.form.language ?? ""}
+                onValueChange={(value) =>
+                  setEditingAssignment((prev) =>
+                    prev
+                      ? { ...prev, form: { ...prev.form, language: value } }
+                      : prev,
+                  )
+                }
+              >
+                <SelectTrigger className="mt-1.5 w-full">
+                  <SelectValue placeholder="Select a language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="c">C</SelectItem>
+                  <SelectItem value="cpp">C++</SelectItem>
+                  <SelectItem value="java">Java</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="mb-1.5 block text-sm">Due Date</Label>
               <Input
                 type="date"
@@ -644,24 +723,31 @@ export function DashboardClient({
                 }
               />
             </div>
+            {editAssignmentError && (
+              <p className="text-sm text-destructive">{editAssignmentError}</p>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button onClick={handleSaveEdit}>Save changes</Button>
+            <LoadingButton
+              loading={isSavingAssignment}
+              onClick={handleSaveEdit}
+              disabled={
+                !editingAssignment?.form.title ||
+                !editingAssignment?.form.dueDate ||
+                !editingAssignment?.form.language
+              }
+            >
+              Save changes
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* ── Create Assignment Dialog ────────────────────────────────────────── */}
-      <Dialog
-        open={createDialogOpen}
-        onOpenChange={(open) => {
-          setCreateDialogOpen(open);
-          if (!open) setCreateAssignmentError(null);
-        }}
-      >
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New Assignment</DialogTitle>
@@ -715,9 +801,16 @@ export function DashboardClient({
             )}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateForm({ title: "", dueDate: "", language: "" });
+                setCreateAssignmentError(null);
+                setCreateDialogOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
             <LoadingButton
               loading={isCreatingAssignment}
               onClick={handleCreateAssignment}
@@ -826,10 +919,7 @@ export function DashboardClient({
       {/* ── Create Course Dialog ────────────────────────────────────────────── */}
       <Dialog
         open={createCourseDialogOpen}
-        onOpenChange={(open) => {
-          setCreateCourseDialogOpen(open);
-          if (!open) setCreateCourseError(null);
-        }}
+        onOpenChange={setCreateCourseDialogOpen}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -867,9 +957,16 @@ export function DashboardClient({
             )}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateCourseForm({ code: "", name: "" });
+                setCreateCourseError(null);
+                setCreateCourseDialogOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
             <LoadingButton
               loading={isCreatingCourse}
               onClick={handleCreateCourse}
