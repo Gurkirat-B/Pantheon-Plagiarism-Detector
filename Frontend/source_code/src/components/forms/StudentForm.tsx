@@ -11,15 +11,17 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/ui/password-input";
 import { LoadingButton } from "../LoadingButton";
 import { useState } from "react";
 import ToggleFormButton from "./ToggleFormButton";
-import { loginFormSchema } from "./formSchema";
 import { useRouter } from "next/navigation";
-import { CheckResultDialog } from "./CheckResultDialog";
 
-const studentFormSchema = loginFormSchema.extend({
+const studentFormSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .min(3, "Email must be at least 3 characters.")
+    .email("Please type a valid email."),
   key: z.string().trim().min(3, "Key must be at least 3 characters."),
 });
 
@@ -40,7 +42,6 @@ export default function StudentForm({
     resolver: zodResolver(studentFormSchema),
     defaultValues: {
       email: "",
-      password: "",
       key: "",
     },
   });
@@ -53,7 +54,6 @@ export default function StudentForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: values.email,
-          password: values.password,
           assignment_id: values.key,
         }),
       });
@@ -87,8 +87,7 @@ export default function StudentForm({
         <div className="flex w-full flex-col gap-2 text-center">
           <div className="text-2xl font-bold lg:text-3xl">Welcome Student</div>
           <p className="text-base text-muted-foreground">
-            Enter your credentials and the assignment key provided by your
-            instructor
+            Enter your email and the assignment key provided by your instructor
           </p>
         </div>
         <ToggleFormButton
@@ -107,26 +106,6 @@ export default function StudentForm({
                   placeholder="student@example.com"
                   type="email"
                   autoComplete="email"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={studentForm.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel htmlFor="password" className="text-base sm:text-lg">
-                Password
-              </FormLabel>
-              <FormControl>
-                <PasswordInput
-                  id="password"
-                  placeholder="•••••••"
-                  autoComplete="current-password"
                   {...field}
                 />
               </FormControl>
@@ -166,11 +145,6 @@ export default function StudentForm({
         >
           Sign In
         </LoadingButton>
-        <div className="text-base">
-          <p>
-            Want to check the similarity results? <CheckResultDialog />
-          </p>
-        </div>
       </form>
     </Form>
   );

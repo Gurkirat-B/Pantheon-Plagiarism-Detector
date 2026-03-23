@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Check,
-  CheckCircle2,
-  Copy,
-  File as FileIcon,
-  Info,
-  Trash,
-} from "lucide-react";
+import { CheckCircle2, File as FileIcon, Trash } from "lucide-react";
 import React, { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useForm } from "react-hook-form";
@@ -61,15 +54,7 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function FileUpload() {
   const [loading, setLoading] = useState(false);
-  const [submissionId, setSubmissionId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    if (!submissionId) return;
-    navigator.clipboard.writeText(submissionId);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const [successOpen, setSuccessOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -156,7 +141,7 @@ export default function FileUpload() {
       }
 
       form.reset();
-      setSubmissionId(result.submission_id);
+      setSuccessOpen(true);
     } catch {
       form.setError("root", {
         type: "manual",
@@ -279,7 +264,7 @@ export default function FileUpload() {
         </Card>
       </div>
 
-      <AlertDialog open={submissionId !== null}>
+      <AlertDialog open={successOpen}>
         <AlertDialogContent className="sm:max-w-sm">
           <AlertDialogTitle className="sr-only">
             Submission Successful
@@ -292,37 +277,6 @@ export default function FileUpload() {
               <h2 className="text-2xl font-bold">Submission Successful!</h2>
               <p className="text-base text-muted-foreground">
                 Your assignment has been submitted successfully.
-              </p>
-            </div>
-            <div className="w-full rounded-lg border bg-muted/50 px-5 py-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Submission ID
-              </p>
-              <div className="flex items-center justify-center gap-2">
-                <p className="font-mono text-xl font-semibold tracking-widest text-foreground">
-                  {submissionId}
-                </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={handleCopy}
-                  aria-label="Copy submission ID"
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-primary transition-all" />
-                  ) : (
-                    <Copy className="h-4 w-4 transition-all" />
-                  )}
-                </Button>
-              </div>
-            </div>
-            <div className="flex w-full items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-left">
-              <Info className="mt-1 h-4 w-4 shrink-0 text-primary" />
-              <p className="text-sm font-medium text-primary">
-                Save this ID - you&apos;ll need it to check your similarity
-                result later.
               </p>
             </div>
             <AlertDialogAction
