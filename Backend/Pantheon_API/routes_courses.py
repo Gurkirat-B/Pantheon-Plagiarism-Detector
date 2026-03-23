@@ -40,10 +40,22 @@ def create_course(body: CreateCourseRequest, user: dict = Depends(get_current_us
             """,
             (body.code, body.name)
         ).fetchone()
+        
+        course_id = row[0]  # Extract course_id from returned row
+
+        # Add record to enrollments table to track professor-course relationship
+        conn.execute(
+            """
+            INSERT INTO enrollments (user_id, course_id)
+            VALUES (%s, %s)
+            """,
+            (str(user["user_id"]), str(course_id)),
+        )
+
         conn.commit()
 
     return {
-        "course_id": str(row[0]),
+        "course_id": str(course_id),
         "code": row[1],
         "name": row[2],
         "message": "Course created successfully"
@@ -57,10 +69,13 @@ def list_courses(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT course_id, code, name
-            FROM courses
-            ORDER BY code ASC
-            """
+            SELECT c.course_id, c.code, c.name, c.created_at
+            FROM courses c
+            JOIN enrollments e ON c.course_id = e.course_id
+            WHERE e.user_id = %s
+            ORDER BY c.created_at DESC
+            """,
+            (str(user["user_id"]),),
         ).fetchall()
 
     return {
