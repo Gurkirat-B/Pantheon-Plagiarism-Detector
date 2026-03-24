@@ -58,9 +58,6 @@ CREATE TABLE assignments (
   -- Language constraints for submissions/ingestion
   language      supported_language NOT NULL,
 
-  -- Arbitrary assignment config (limits, flags, etc.)
-  settings      JSONB NOT NULL DEFAULT '{}'::jsonb,
-
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

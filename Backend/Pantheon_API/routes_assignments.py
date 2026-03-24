@@ -1,5 +1,6 @@
 from uuid import UUID
 from datetime import datetime
+from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,14 +16,23 @@ def _require_professor(user: dict):
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Professor role required")
 
+# Enum for supported languages
+class SupportedLanguage(str, Enum):
+    java = "java"
+    cpp = "cpp"
+    c = "c"
 
 class CreateAssignmentRequest(BaseModel):
     course_id: UUID
     title: str
     language: str
     due_date: datetime | None = None
-    settings: dict = {}
 
+# Request model for editing an assignment
+class EditAssignmentRequest(BaseModel):
+    title: str
+    due_date: str  # ISO 8601 format for dates (e.g., "2023-04-01T23:59:59Z")
+    language: SupportedLanguage
 
 @router.post("/")
 def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_current_user)):
@@ -46,8 +56,8 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
 
         row = conn.execute(
             """
-            INSERT INTO assignments (course_id, title, due_date, language, settings)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO assignments (course_id, title, due_date, language)
+            VALUES (%s, %s, %s, %s)
             RETURNING assignment_id, course_id, title, language, due_date, created_at
             """,
             (
@@ -55,7 +65,6 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
                 body.title,
                 body.due_date,
                 body.language,
-                Jsonb(body.settings),
             )
         ).fetchone()
         conn.commit()
@@ -155,6 +164,49 @@ def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
         ]
     }
 
+@router.put("/{assignment_id}")
+def edit_assignment(
+    assignment_id: UUID,
+    body: EditAssignmentRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Edit an existing assignment. The professor can update the title, due date,
+    and programming language for the assignment.
+    """
+    _require_professor(user)
+    with get_db_connection() as conn:
+        # Check if the assignment exists and if the professor is authorized to edit it
+        assignment = conn.execute(
+            """
+            SELECT a.assignment_id
+            FROM assignments a
+            JOIN courses c ON a.course_id = c.course_id
+            JOIN enrollments e ON e.course_id = c.course_id
+            WHERE a.assignment_id = %s
+              AND e.user_id = %s
+            """,
+            (str(assignment_id), str(user["user_id"])),
+        ).fetchone()
+
+        if not assignment:
+            raise HTTPException(status_code=404, detail="Assignment not found or not authorized")
+
+        # Update the assignment's fields
+        conn.execute(
+            """
+            UPDATE assignments
+            SET title = %s,
+                due_date = %s,
+                language = %s
+            WHERE assignment_id = %s
+            """,
+            (body.title, body.due_date, body.language, str(assignment_id)),
+        )
+
+        conn.commit()
+
+    return {"assignment_id": str(assignment_id), "message": "Assignment updated successfully"}
 
 @router.delete("/{assignment_id}")
 def delete_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
