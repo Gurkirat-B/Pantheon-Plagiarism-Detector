@@ -8,6 +8,16 @@ Engine
 
 Backend
 - linking the professor with courses
+- Student login API
+- Add my account api for the functionalities
 
 UI
 - removing student views and Connect course change api name to UI
+- Add "My account" button to professor view
+    In My account
+    - Name
+    - Email
+
+    Account details
+    - Change email
+    - Delete account
