@@ -9,7 +9,7 @@ Engine
 Backend
 - linking the professor with courses
 - Student login API
-- Add my account api for the functionalities
+- Create a GetUser API for "My Account" section for professor view
 
 UI
 - removing student views and Connect course change api name to UI
