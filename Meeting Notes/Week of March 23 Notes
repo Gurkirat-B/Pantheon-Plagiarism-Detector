@@ -21,3 +21,10 @@ UI
     Account details
     - Change email
     - Delete account
+
+- On the bottom of the page, where it shows about Pantheon and subscribe to the newsletter 
+    - Remove subscription to newsletter
+    - Social media buttons lead to coming soon pages
+    - Remove GitHub social media button
+    - Remove features, works, and careers in the company dropdown 
+    - Combine Terms & conditions and Privacy policy 
