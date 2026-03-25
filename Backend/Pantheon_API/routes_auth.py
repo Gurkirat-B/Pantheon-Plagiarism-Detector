@@ -78,7 +78,8 @@ def login(body: LoginRequest):
             
             if not row:
                 user_id = register_user(conn, name = None, email = body.email, role = "student", password = None)
-                return {"user_id": str(user_id), "message": "Student registered and logged in"}
+                token = create_token(str(user_id), "student")
+                return {"access_token": token, "token_type": "bearer", "message": "Student registered and logged in"}
             # Student exists, proceed with login (no password required)
             return {"user_id": str(row[0]), "message": "Student logged in"}
 
