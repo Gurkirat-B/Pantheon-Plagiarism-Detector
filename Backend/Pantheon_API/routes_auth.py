@@ -11,7 +11,7 @@ class RegisterRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
-    role: str = "student" # default role is "student"
+    role: str = "professor"
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -82,6 +82,8 @@ def login(body: LoginRequest):
                 return {"access_token": token, "token_type": "bearer", "message": "Student registered and logged in"}
             # Student exists, proceed with login (no password required)
             return {"user_id": str(row[0]), "message": "Student logged in"}
+        else:
+            raise HTTPException(status_code=400, detail="Invalid role specified")
 
     token = create_token(str(row[0]), row[2])
     return {"access_token": token, "token_type": "bearer"}
