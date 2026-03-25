@@ -1,10 +1,33 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { LogoutButton } from "./LogoutButton";
+import { AccountButton } from "./AccountButton";
 
 export default async function Navbar() {
   const cookieStore = await cookies();
-  const isLoggedIn = !!cookieStore.get("access_token")?.value;
+  const token = cookieStore.get("access_token")?.value;
+  const isLoggedIn = !!token;
+
+  let isProfessor = false;
+  let professorName = "";
+  let professorEmail = "";
+
+  if (token) {
+    const res = await fetch(`${process.env.BACKEND_URL}/auth/role`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      isProfessor = data.role === "professor";
+      professorName = "John Doe";
+      professorEmail = "example@example.com";
+    }
+  }
 
   return (
     <header className="bg-background shadow-sm">
@@ -18,6 +41,9 @@ export default async function Navbar() {
           </Link>
         </div>
         <div className="flex items-center justify-center gap-5">
+          {isLoggedIn && isProfessor && (
+            <AccountButton name={professorName} email={professorEmail} />
+          )}
           {isLoggedIn && <LogoutButton />}
         </div>
       </div>
