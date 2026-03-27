@@ -17,7 +17,7 @@ import zipfile
 from pathlib import Path
 
 from engine.exceptions import (
-    CorruptZipError, EmptySubmissionError,
+    EngineError, CorruptZipError, EmptySubmissionError,
     UnsupportedFileTypeError, ZipTooLargeError,
     ZipBombError, PathTraversalError, NestedZipDepthError,
 )
@@ -34,7 +34,7 @@ MAX_FILES = 5000
 MAX_COMPRESSED_BYTES   = 100 * 1024 * 1024   # 100 MB compressed
 MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024   # 500 MB decompressed (zip bomb guard)
 MAX_SINGLE_FILE_BYTES  = 10 * 1024 * 1024    # 10 MB per file
-MAX_NESTED_ZIP_DEPTH   = 3
+MAX_NESTED_ZIP_DEPTH   = 10
 MAX_PATH_LENGTH        = 260
 
 
