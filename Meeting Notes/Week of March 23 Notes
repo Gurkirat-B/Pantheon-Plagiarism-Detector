@@ -2,12 +2,35 @@ March 23, 2026
 
 - Went over the "After the demo" notes to start planning what to do next
 - Booked next week's meeting
+- cleaned up github
 
 Engine
 - Fine-tuning, multiple comparisons, and round-robin comparisons
 
 Backend
 - linking the professor with courses
+- Student login API
+- Create a GetUser API for "My Account" section for professor view
 
 UI
 - removing student views and Connect course change api name to UI
+- Add "My account" button to professor view
+    In My account
+    - Name
+    - Email
+
+    Account details
+    - Change email
+    - Delete account
+
+- On the bottom of the page, where it shows about Pantheon and subscribe to the newsletter 
+    - Remove subscription to newsletter
+    - Social media buttons lead to coming soon pages
+    - Remove GitHub social media button
+    - Remove features, works, and careers in the company dropdown 
+    - Combine Terms & conditions and Privacy policy 
+    - Create about me page
+    - Create Terms & conditions and Privacy policy page
+    - Create customer support page 
+
+- Created new logo for Pantheon (Image in documents)

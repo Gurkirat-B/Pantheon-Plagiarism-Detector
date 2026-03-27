@@ -40,7 +40,7 @@ from engine.tokenize.lex import tokenize
 from engine.fingerprint.kgrams import winnow
 from engine.similarity.scores import weighted_score
 from engine.similarity.line_matcher import calculate_line_similarity, build_line_mapping, get_full_source_with_mapping
-from engine.evidence.evidence import build_evidence
+from engine.evidence.evidence import build_evidence, build_evidence_heatmap
 from engine.obfuscation.detect import detect_obfuscation
 from engine.similarity.chunk import compute_method_similarity
 
@@ -50,6 +50,8 @@ from engine.similarity.chunk import compute_method_similarity
 # positives (e.g. any code ending a function call with ", NUM);" matches).
 _K = 10
 _W = 5
+_K_SHORT = 5   # second pass for short methods (< 10 tokens) — evidence only
+_W_SHORT = 3
 
 
 def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str = "mixed"):
@@ -81,12 +83,18 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
 
     fp = winnow(tok_norm, k=_K, window=_W)
 
+    # second pass with smaller k — catches short methods (< 10 tokens) that
+    # produce zero fingerprints under k=10. Used for evidence building only,
+    # never for scoring, so it cannot inflate similarity scores.
+    fp_short = winnow(tok_norm, k=_K_SHORT, window=_W_SHORT)
+
     return {
         "lang": lang,
         "canon": canon,
         "tok_norm": tok_norm,
         "tok_raw": tok_raw,
         "fp": fp,
+        "fp_short": fp_short,
     }
 
 
@@ -155,14 +163,19 @@ def compare(
             boosted = round(0.65 * method_sim + 0.35 * scores["weighted_final"], 4)
             scores["weighted_final"] = min(1.0, boosted)
 
-        evidence = build_evidence(
-            fp_a=fp_a,
-            fp_b=fp_b,
+        # heat map evidence — combines k=10 and k=5 passes in one computation.
+        # marks every line covered by any shared fingerprint as hot, then groups
+        # contiguous hot regions into evidence blocks. Eliminates merge-gap
+        # artifacts and ensures short methods are always included.
+        evidence = build_evidence_heatmap(
+            fp_passes=[
+                (fp_a, fp_b, _K),
+                (proc_a["fp_short"], proc_b["fp_short"], _K_SHORT),
+            ],
             tok_a=proc_a["tok_norm"],
             tok_b=proc_b["tok_norm"],
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
-            k=_K,
             work_dir_a=dir_a,
             work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
@@ -356,14 +369,15 @@ def batch_analyze(
             if scores["weighted_final"] < threshold:
                 continue
 
-            evidence = build_evidence(
-                fp_a=pa["fp"],
-                fp_b=pb["fp"],
+            evidence = build_evidence_heatmap(
+                fp_passes=[
+                    (pa["fp"], pb["fp"], _K),
+                    (pa["fp_short"], pb["fp_short"], _K_SHORT),
+                ],
                 tok_a=pa["tok_norm"],
                 tok_b=pb["tok_norm"],
                 source_map_a=pa["canon"].source_map,
                 source_map_b=pb["canon"].source_map,
-                k=_K,
                 work_dir_a=workdir / f"sub_{id_a}",
                 work_dir_b=workdir / f"sub_{id_b}",
             )
@@ -401,6 +415,31 @@ def batch_analyze(
         "pairs":          pairs,
         "preprocessing_errors": errors if errors else None,
     }
+
+
+def _merge_evidence(primary: list, supplementary: list) -> list:
+    """
+    Merge two evidence block lists, removing blocks from supplementary that
+    are already covered by a block in primary (overlap on both A and B sides).
+    Keeps all primary blocks. Only adds supplementary blocks that cover
+    genuinely new line regions not already highlighted by primary.
+    """
+    if not supplementary:
+        return primary
+
+    def overlaps(b1, b2):
+        a_overlap = b1["lines_a"][0] <= b2["lines_a"][1] and b2["lines_a"][0] <= b1["lines_a"][1]
+        b_overlap = b1["lines_b"][0] <= b2["lines_b"][1] and b2["lines_b"][0] <= b1["lines_b"][1]
+        return a_overlap and b_overlap
+
+    merged = list(primary)
+    for sup in supplementary:
+        if not any(overlaps(sup, p) for p in primary):
+            merged.append(sup)
+
+    strength_order = {"high": 0, "medium": 1, "low": 2}
+    merged.sort(key=lambda e: strength_order.get(e["match_strength"], 3))
+    return merged
 
 
 def _get_template_fingerprints(template_path: Union[str, Path], work_dir: Path) -> dict:

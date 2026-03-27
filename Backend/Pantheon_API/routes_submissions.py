@@ -58,6 +58,110 @@ def _delete_s3_object_if_exists(bucket: str, key: str) -> None:
             return
         raise
 
+@router.get("/repo/uploads")
+def get_uploads(user: dict = Depends(get_current_user)):
+    if user["role"] != "professor":
+        raise HTTPException(status_code=403, detail="Only professors can view repository uploads")
+
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT ru.upload_id, ru.filename, ru.uploaded_at
+            FROM repository_uploads ru
+            JOIN repositories r ON r.repository_id = ru.repository_id
+            WHERE r.owner_id = %s
+            ORDER BY ru.uploaded_at DESC
+            """,
+            (str(user["user_id"]),),
+        ).fetchall()
+
+    return {
+        "uploads": [
+            {"upload_id": str(row[0]), "filename": row[1], "uploaded_at": row[2].isoformat()}
+            for row in rows
+        ]
+    }
+
+@router.post("/repo")
+async def upload_to_repo(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    if user["role"] != "professor":
+        raise HTTPException(status_code=403, detail="Only professors can upload to a repository")
+
+    # check file type
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Only .zip files are allowed")
+
+    # read file bytes
+    file_bytes = await file.read()
+    size = len(file_bytes)
+
+    # verify zip contains at least one allowed source file
+    if not _zip_contains_allowed_source(file_bytes):
+        raise HTTPException(
+            status_code=400,
+            detail="ZIP must contain at least one .java, .cpp, or .c file",
+        )
+
+    # look up the repository belonging to this professor
+    with get_db_connection() as conn:
+        repo = conn.execute(
+            "SELECT repository_id FROM repositories WHERE owner_id = %s",
+            (str(user["user_id"]),),
+        ).fetchone()
+
+    if not repo:
+        raise HTTPException(status_code=404, detail="No repository found for this user")
+
+    repository_id = repo[0]
+
+    # upload to S3
+    new_key = f"repositories/{repository_id}/{file.filename}"
+    try:
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=new_key,
+            Body=file_bytes,
+            ContentType="application/zip",
+        )
+    except ClientError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to upload to S3: {e}")
+
+    # upsert artifact, insert new repository_upload record
+    with get_db_connection() as conn:
+        artifact_row = conn.execute(
+            """
+            INSERT INTO artifacts (s3_bucket, s3_key, original_name, content_type, size_bytes)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (s3_bucket, s3_key) DO UPDATE
+              SET original_name = EXCLUDED.original_name,
+                  size_bytes    = EXCLUDED.size_bytes,
+                  content_type  = EXCLUDED.content_type
+            RETURNING artifact_id
+            """,
+            (S3_BUCKET, new_key, file.filename, "application/zip", size),
+        ).fetchone()
+
+        upload_row = conn.execute(
+            """
+            INSERT INTO repository_uploads (repository_id, artifact_id, filename)
+            VALUES (%s, %s, %s)
+            RETURNING upload_id
+            """,
+            (str(repository_id), str(artifact_row[0]), file.filename),
+        ).fetchone()
+
+        conn.commit()
+
+    return {
+        "upload_id": str(upload_row[0]),
+        "s3_key": new_key,
+        "size_bytes": size,
+        "message": "File uploaded to repository successfully"
+    }
+
 @router.post("/{assignment_id}")
 async def upload_submission(
     assignment_id: UUID,
@@ -149,3 +253,4 @@ async def upload_submission(
         "size_bytes": size,
         "message": "Submission uploaded successfully"
     }
+
