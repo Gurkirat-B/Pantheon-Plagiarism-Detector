@@ -27,6 +27,7 @@ def main():
     ap.add_argument("--pretty",      action="store_true", help="Pretty-print JSON output")
     ap.add_argument("--report",      action="store_true", help="Print clean human-readable report")
     ap.add_argument("--save-report", default=None,  metavar="FILE", help="Save report to a .txt file")
+    ap.add_argument("--save-html",   default=None,  metavar="FILE", help="Save interactive HTML report to a file")
     args = ap.parse_args()
 
     result = compare(
@@ -38,14 +39,21 @@ def main():
         workdir=args.workdir,
     )
 
-    # --report: print clean human-readable output
+    if args.save_html:
+        from engine.report_html import format_report_html
+        html = format_report_html(result)
+        with open(args.save_html, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"HTML report saved to: {args.save_html}")
+
     if args.report or args.save_report:
         from engine.report import format_report, save_report
         if args.report:
             print(format_report(result))
         if args.save_report:
             save_report(result, args.save_report)
-    else:
+
+    if not args.save_html and not args.report and not args.save_report:
         indent = 2 if args.pretty else None
         print(json.dumps(result, indent=indent))
 
