@@ -92,7 +92,8 @@ def login(body: LoginRequest):
                 token = create_token(str(user_id), "student")
                 return {"access_token": token, "token_type": "bearer", "message": "Student registered and logged in"}
             # Student exists, proceed with login (no password required)
-            return {"user_id": str(row[0]), "message": "Student logged in"}
+            token = create_token(str(row[0]), row[2])
+            return {"access_token": token, "token_type": "bearer", "message": "Student logged in"}
         else:
             raise HTTPException(status_code=400, detail="Invalid role specified")
 
