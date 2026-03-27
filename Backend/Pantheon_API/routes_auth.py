@@ -48,6 +48,17 @@ def register(body: RegisterRequest):
         # Insert new user
         row = register_user(conn, body.name, body.email, body.role, body.password)
 
+        # Create a default repository for professors
+        if body.role == "professor":
+            conn.execute(
+                """
+                INSERT INTO repositories (owner_id, name)
+                VALUES (%s, %s)
+                """,
+                (str(row[0]), f"{body.name}'s Repository")
+            )
+            conn.commit()
+
     #successfully registered
     return {"user_id": str(row[0]), "message": "User registered successfully"}
 

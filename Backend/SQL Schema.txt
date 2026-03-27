@@ -134,13 +134,9 @@ CREATE TABLE submissions (
 CREATE TABLE repositories (
   repository_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-  -- assignment repos can be attached to an assignment; professor repos can be unattached
-  assignment_id UUID REFERENCES assignments(assignment_id) ON DELETE SET NULL,
-
   owner_id      UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   name          TEXT NOT NULL,
-  type          repo_type NOT NULL,
-
+  filename      TEXT
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
