@@ -160,11 +160,12 @@ def compare(
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
             k=_K,
-            merge_gap=1,
+            merge_gap=3,
             work_dir_a=dir_a,
             work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
             canonical_text_b=proc_b["canon"].canonical_text,
+            lang=lang,
         )
         evidence_short = build_evidence(
             fp_a_short, fp_b_short,
@@ -173,11 +174,12 @@ def compare(
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
             k=_K_SHORT,
-            merge_gap=1,
+            merge_gap=3,
             work_dir_a=dir_a,
             work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
             canonical_text_b=proc_b["canon"].canonical_text,
+            lang=lang,
         )
         evidence = _merge_evidence(evidence, evidence_short)
         evidence = _deduplicate_evidence_1to1(evidence)
@@ -337,6 +339,8 @@ def batch_analyze(
             if scores["weighted_final"] < threshold:
                 continue
 
+            lang = pa["lang"] if pa["lang"] == pb["lang"] else "mixed"
+
             evidence = build_evidence(
                 pa["fp"], pb["fp"],
                 tok_a=pa["tok_norm"],
@@ -344,11 +348,12 @@ def batch_analyze(
                 source_map_a=pa["canon"].source_map,
                 source_map_b=pb["canon"].source_map,
                 k=_K,
-                merge_gap=1,
+                merge_gap=3,
                 work_dir_a=workdir / f"sub_{id_a}",
                 work_dir_b=workdir / f"sub_{id_b}",
                 canonical_text_a=pa["canon"].canonical_text,
                 canonical_text_b=pb["canon"].canonical_text,
+                lang=lang,
             )
             evidence_short = build_evidence(
                 pa["fp_short"], pb["fp_short"],
@@ -357,11 +362,12 @@ def batch_analyze(
                 source_map_a=pa["canon"].source_map,
                 source_map_b=pb["canon"].source_map,
                 k=_K_SHORT,
-                merge_gap=1,
+                merge_gap=3,
                 work_dir_a=workdir / f"sub_{id_a}",
                 work_dir_b=workdir / f"sub_{id_b}",
                 canonical_text_a=pa["canon"].canonical_text,
                 canonical_text_b=pb["canon"].canonical_text,
+                lang=lang,
             )
             evidence = _merge_evidence(evidence, evidence_short)
             evidence = _deduplicate_evidence_1to1(evidence)
@@ -374,8 +380,6 @@ def batch_analyze(
                 fp_a_norm=pa["fp"],
                 fp_b_norm=pb["fp"],
             )
-
-            lang = pa["lang"] if pa["lang"] == pb["lang"] else "mixed"
 
             pairs.append({
                 "submission_a":      id_a,
