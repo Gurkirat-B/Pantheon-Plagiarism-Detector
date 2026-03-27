@@ -22,3 +22,4 @@ env/
 # Local testing output
 samples/
 samples.zip
+Backend/Pantheon_API/pantheon-api-deploy.zip
