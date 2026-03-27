@@ -55,6 +55,7 @@ export default function StudentForm({
         body: JSON.stringify({
           email: values.email,
           assignment_id: values.key,
+          role: "student",
         }),
       });
       const result = await res.json();

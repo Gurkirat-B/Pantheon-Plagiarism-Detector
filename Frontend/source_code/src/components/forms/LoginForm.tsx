@@ -46,6 +46,7 @@ export default function LoginForm({ activeForm, onSwitch }: LoginFormProps) {
         body: JSON.stringify({
           email: data.email,
           password: data.password,
+          role: "professor",
         }),
       });
 
