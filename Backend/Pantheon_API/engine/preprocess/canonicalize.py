@@ -30,11 +30,17 @@ class SourceMapEntry:
     """
     Maps a range of lines in the canonical file back to the original source.
     canonical_start and canonical_end are 1-indexed line numbers.
+
+    line_map: optional list where line_map[canonical_offset] = original_offset
+    (both 0-indexed relative to this entry's start). Built when control flow
+    normalization changes line counts (e.g. switch → if-else expansion).
+    None means 1:1 mapping — canonical offset == original offset.
     """
     canonical_start: int
     canonical_end: int
     original_file: str
     original_start: int
+    line_map: list = None  # None = 1:1 mapping
 
 
 @dataclass
@@ -96,8 +102,10 @@ def canonicalize(source_files: List[Path], out_dir: Path, lang: str = "mixed") -
         # filter boilerplate imports
         cleaned = filter_boilerplate(cleaned, file_lang)
 
-        # normalize control flow patterns
-        cleaned = _normalize_control_flow(cleaned, file_lang)
+        # normalize control flow patterns — returns (text, switch_line_map)
+        # switch_line_map[canonical_offset] = original_offset (0-based)
+        # None if no switch statements were present (1:1 mapping assumed)
+        cleaned, switch_line_map = _normalize_control_flow(cleaned, file_lang)
 
         # normalize whitespace
         # NOTE: do NOT collapse blank lines here — comment stripping replaces
@@ -124,11 +132,14 @@ def canonicalize(source_files: List[Path], out_dir: Path, lang: str = "mixed") -
         current_canonical_line += 1
 
         # source map entry: canonical_start is now the first content line
+        # line_map stores switch expansion offsets so _canonical_line_to_source
+        # can correctly reverse-map even when line counts changed.
         entry = SourceMapEntry(
             canonical_start=current_canonical_line,
             canonical_end=current_canonical_line + len(lines) - 1,
             original_file=rel,
             original_start=1,
+            line_map=switch_line_map,
         )
         source_map.append(entry)
 
@@ -175,7 +186,7 @@ def _detect_file_lang(path: Path) -> str:
     return mapping.get(ext, "mixed")
 
 
-def _normalize_switch_to_ifelse(text: str) -> str:
+def _normalize_switch_to_ifelse(text: str) -> tuple:
     """
     Convert switch(EXPR) { case VAL: ...; break; ... default: ...; }
     to an equivalent if / else-if / else chain.
@@ -193,13 +204,18 @@ def _normalize_switch_to_ifelse(text: str) -> str:
     """
     lines = text.split('\n')
     result = []
+    # line_map[result_index] = original_index (both 0-based)
+    # tracks how canonical output lines map back to original source lines
+    line_map = []
     i = 0
 
     while i < len(lines):
         line = lines[i]
+        orig_i = i  # track where this block started in original
 
         m = re.match(r'^(\s*)switch\s*\(\s*(.*?)\s*\)\s*\{?\s*$', line)
         if not m:
+            line_map.append(i)
             result.append(line)
             i += 1
             continue
@@ -216,6 +232,7 @@ def _normalize_switch_to_ifelse(text: str) -> str:
                 if s == '{':
                     break
                 if s:          # unexpected non-blank before '{' — abort
+                    line_map.append(orig_i)
                     result.append(line)
                     i -= 1     # re-process from here
                     break
@@ -279,11 +296,15 @@ def _normalize_switch_to_ifelse(text: str) -> str:
                     if clean:
                         cur_stmts.append(clean)
 
+        orig_end = i  # original lines orig_i..orig_end-1 consumed
+
         # ── Emit if / else-if / else chain ───────────────────────────────────
         if not cases:          # parse failed — emit original switch line untouched
+            line_map.append(orig_i)
             result.append(line)
             continue
 
+        emit_start = len(result)
         for idx, (val, stmts) in enumerate(cases):
             if val is not None:
                 kw = 'if' if idx == 0 else 'else if'
@@ -293,11 +314,20 @@ def _normalize_switch_to_ifelse(text: str) -> str:
             for stmt in stmts:
                 result.append(f'{indent}    {stmt}')
             result.append(f'{indent}}}')
+        emit_end = len(result)
 
-    return '\n'.join(result)
+        # map each emitted output line back to a proportional original line
+        orig_block_len = max(orig_end - orig_i, 1)
+        emit_block_len = emit_end - emit_start
+        for out_idx in range(emit_start, emit_end):
+            ratio = (out_idx - emit_start) / emit_block_len
+            orig_offset = int(ratio * orig_block_len)
+            line_map.append(orig_i + orig_offset)
+
+    return '\n'.join(result), line_map
 
 
-def _normalize_control_flow(text: str, lang: str) -> str:
+def _normalize_control_flow(text: str, lang: str) -> tuple:
     """
     Normalize equivalent control flow patterns so they produce the same tokens.
 
@@ -310,9 +340,11 @@ def _normalize_control_flow(text: str, lang: str) -> str:
     lang = (lang or "mixed").lower()
 
     # --- switch → if-else (C, C++, Java) ---
+    # Returns (text, line_map) where line_map[canonical_offset] = original_offset
+    switch_line_map = None
     if lang in ("c", "cpp", "c_or_cpp", "java", "csharp", "javascript",
                 "typescript", "mixed"):
-        text = _normalize_switch_to_ifelse(text)
+        text, switch_line_map = _normalize_switch_to_ifelse(text)
 
     # --- normalize increment/decrement variants ---
     # `i++` / `++i` / `i += 1` all mean the same thing — normalize to `i += 1`
@@ -401,7 +433,7 @@ def _normalize_control_flow(text: str, lang: str) -> str:
     text = re.sub(r"null\s*!=\s*(\w+)", r"\1 != null", text)
     text = re.sub(r"null\s*==\s*(\w+)", r"\1 == null", text)
 
-    return text
+    return text, switch_line_map
 
 
 def _collapse_blanks(text: str) -> str:
