@@ -117,7 +117,7 @@ def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         assignment = conn.execute(
             """
-            SELECT assignment_id, course_id, title, language, due_date, settings, created_at
+            SELECT assignment_id, course_id, title, language, due_date, created_at
             FROM assignments
             WHERE assignment_id = %s
             """,
@@ -147,8 +147,7 @@ def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
         "title": assignment[2],
         "language": assignment[3],
         "due_date": assignment[4].isoformat() if assignment[4] else None,
-        "settings": assignment[5],
-        "created_at": assignment[6].isoformat() if assignment[6] else None,
+        "created_at": assignment[5].isoformat() if assignment[5] else None,
         "submissions": [
             {
                 "submission_id": str(s[0]),
