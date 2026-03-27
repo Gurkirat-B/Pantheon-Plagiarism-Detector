@@ -145,17 +145,10 @@ def _kw_set(lang: str) -> Set[str]:
 
 # ─── Semantic Token Normalization ───────────────────────────────────
 
-# Control flow keywords → normalize to canonical tokens
-# This helps catch ternary ↔ if/else, switch ↔ if/else, for ↔ while swaps
+# Loop keywords: all map to "LOOP" in normalized mode so for↔while↔do swaps
+# still produce matching k-grams. Only affects tok_norm — tok_raw is unchanged
+# so detect.py can still identify which loop construct was actually used.
 _LOOP_KEYWORDS = {"for", "while", "do", "loop"}  # "loop" for Rust
-_BRANCH_KEYWORDS = {"if", "else", "elif", "switch", "case", "default", "match", "when"}
-
-# Type keywords that are structural noise when comparing algorithms
-_TYPE_KEYWORDS = {
-    "int", "long", "short", "byte", "float", "double", "char", "boolean", "bool",
-    "void", "signed", "unsigned", "String", "string",
-    "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64",  # Rust
-}
 
 # Access modifiers — noise for algorithm comparison
 _ACCESS_KEYWORDS = {
@@ -298,8 +291,12 @@ def tokenize(text: str,
                 if normalize_access and word in _ACCESS_KEYWORDS:
                     i = m.end()
                     continue
-                # emit keywords as-is (structural markers)
-                emit(word)
+                # normalize all loop constructs to LOOP so for↔while↔do swaps
+                # still produce matching k-grams (only in normalized mode)
+                if normalize_ids and word in _LOOP_KEYWORDS:
+                    emit("LOOP")
+                else:
+                    emit(word)
             else:
                 emit("ID" if normalize_ids else word)
             i = m.end()

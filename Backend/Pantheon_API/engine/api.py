@@ -25,8 +25,8 @@ Usage:
     )
 """
 
+import shutil
 import tempfile
-import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional, Union
@@ -39,10 +39,8 @@ from engine.preprocess.stdlib_filter import blank_output_boilerplate
 from engine.tokenize.lex import tokenize
 from engine.fingerprint.kgrams import winnow
 from engine.similarity.scores import weighted_score
-from engine.similarity.line_matcher import calculate_line_similarity, build_line_mapping, get_full_source_with_mapping
-from engine.evidence.evidence import build_evidence, build_evidence_heatmap
+from engine.evidence.evidence import build_evidence
 from engine.obfuscation.detect import detect_obfuscation
-from engine.similarity.chunk import compute_method_similarity
 
 # k-gram size and winnowing window.
 # k=10, W=5: guaranteed detection of any shared sequence >= 14 tokens
@@ -136,51 +134,55 @@ def compare(
 
         lang = proc_a["lang"] if proc_a["lang"] == proc_b["lang"] else "mixed"
 
-        fp_a = proc_a["fp"]
-        fp_b = proc_b["fp"]
+        fp_a  = proc_a["fp"]
+        fp_b  = proc_b["fp"]
+        fp_a_short = proc_a["fp_short"]
+        fp_b_short = proc_b["fp_short"]
 
-        # subtract template fingerprints if provided
+        # subtract template fingerprints from both passes if provided
         if template_path:
             template_fp = _get_template_fingerprints(template_path, workdir / "template")
-            fp_a = _subtract_fingerprints(fp_a, template_fp)
-            fp_b = _subtract_fingerprints(fp_b, template_fp)
+            fp_a       = _subtract_fingerprints(fp_a,       template_fp)
+            fp_b       = _subtract_fingerprints(fp_b,       template_fp)
+            fp_a_short = _subtract_fingerprints(fp_a_short, template_fp)
+            fp_b_short = _subtract_fingerprints(fp_b_short, template_fp)
 
-        scores = weighted_score(fp_a, fp_b)
+        scores = weighted_score(fp_a, fp_b, tok_a=proc_a["tok_norm"], tok_b=proc_b["tok_norm"])
 
-        # Method-level similarity: compare submissions method-by-method.
-        # Catches reordered code where global scores are diluted by position
-        # differences but individual methods still match strongly.
-        method_sim = compute_method_similarity(
-            proc_a["tok_norm"], proc_b["tok_norm"], gram_k=_K
-        )
-        scores["method_similarity"] = round(method_sim, 4)
-
-        # If method-level analysis shows significantly stronger similarity
-        # than the global score, boost weighted_final accordingly.
-        # Threshold: method_sim must exceed global score by >0.15 to trigger,
-        # preventing noise from inflating scores on genuinely different code.
-        if method_sim > scores["weighted_final"] + 0.15:
-            boosted = round(0.65 * method_sim + 0.35 * scores["weighted_final"], 4)
-            scores["weighted_final"] = min(1.0, boosted)
-
-        # heat map evidence — combines k=10 and k=5 passes in one computation.
-        # marks every line covered by any shared fingerprint as hot, then groups
-        # contiguous hot regions into evidence blocks. Eliminates merge-gap
-        # artifacts and ensures short methods are always included.
-        evidence = build_evidence_heatmap(
-            fp_passes=[
-                (fp_a, fp_b, _K),
-                (proc_a["fp_short"], proc_b["fp_short"], _K_SHORT),
-            ],
+        # Build method-level evidence blocks. merge_gap=1 means only adjacent
+        # lines merge — methods separated by a blank line stay as separate blocks,
+        # each with its own HIGH/MEDIUM/LOW strength rating.
+        # Two passes: k=10 for full methods, k=5 supplementary for short methods.
+        evidence = build_evidence(
+            fp_a, fp_b,
             tok_a=proc_a["tok_norm"],
             tok_b=proc_b["tok_norm"],
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
+            k=_K,
+            merge_gap=3,
             work_dir_a=dir_a,
             work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
             canonical_text_b=proc_b["canon"].canonical_text,
+            lang=lang,
         )
+        evidence_short = build_evidence(
+            fp_a_short, fp_b_short,
+            tok_a=proc_a["tok_norm"],
+            tok_b=proc_b["tok_norm"],
+            source_map_a=proc_a["canon"].source_map,
+            source_map_b=proc_b["canon"].source_map,
+            k=_K_SHORT,
+            merge_gap=3,
+            work_dir_a=dir_a,
+            work_dir_b=dir_b,
+            canonical_text_a=proc_a["canon"].canonical_text,
+            canonical_text_b=proc_b["canon"].canonical_text,
+            lang=lang,
+        )
+        evidence = _merge_evidence(evidence, evidence_short)
+        evidence = _deduplicate_evidence_1to1(evidence)
 
         obfuscation_flags = detect_obfuscation(
             tok_a_raw=proc_a["tok_raw"],
@@ -191,47 +193,17 @@ def compare(
             fp_b_norm=fp_b,
         )
 
-        # Calculate line-level similarity for HTML visualization (both directions)
-        line_similarity_a = calculate_line_similarity(
-            tokens_a=proc_a["tok_norm"],
-            tokens_b=proc_b["tok_norm"],
-            fp_a=fp_a,
-            fp_b=fp_b,
-            k=_K,
-        )
-        line_similarity_b = calculate_line_similarity(
-            tokens_a=proc_b["tok_norm"],
-            tokens_b=proc_a["tok_norm"],
-            fp_a=fp_b,
-            fp_b=fp_a,
-            k=_K,
-        )
-
-        line_mapping = build_line_mapping(
-            tokens_a=proc_a["tok_norm"],
-            tokens_b=proc_b["tok_norm"],
-            line_similarity_a=line_similarity_a,
-        )
-        line_mapping_b = build_line_mapping(
-            tokens_a=proc_b["tok_norm"],
-            tokens_b=proc_a["tok_norm"],
-            line_similarity_a=line_similarity_b,
-        )
-        
-        # Load original source files for fullCodeA/fullCodeB in the JSON response.
-        # Must be called here while dir_a/dir_b still exist.
+        # Load original source files for display in the frontend.
         original_sources_a = _load_original_sources(dir_a, proc_a["canon"].source_map)
         original_sources_b = _load_original_sources(dir_b, proc_b["canon"].source_map)
 
-        # Get full source code from canonical text
         source_code_a = proc_a["canon"].canonical_text
         source_code_b = proc_b["canon"].canonical_text
-        
-        source_with_mapping = get_full_source_with_mapping(
-            source_code_a=source_code_a,
-            source_code_b=source_code_b,
-            line_mapping=line_mapping,
-        )
+
+        # Derive per-line highlights from the deduplicated evidence — same
+        # blocks that appear in Match Blocks view, same lines highlighted in
+        # Full Code view. Single source of truth for both views.
+        line_highlights_a, line_highlights_b = _build_line_highlights(evidence)
 
         return {
             "engine_version":    ENGINE_VERSION,
@@ -248,9 +220,11 @@ def compare(
             "source_code_b":     source_code_b,
             "original_sources_a": original_sources_a,
             "original_sources_b": original_sources_b,
-            "line_mapping":      line_mapping,
-            "line_mapping_b":    line_mapping_b,
-            "source_with_mapping": source_with_mapping,
+            # Per-line highlight strengths derived from evidence blocks.
+            # Both Match Blocks and Full Code views use this single source of truth.
+            # Keys are original file line numbers (int), values are "high"/"medium"/"low".
+            "line_highlights_a": line_highlights_a,
+            "line_highlights_b": line_highlights_b,
         }
 
     except EngineError as e:
@@ -258,6 +232,9 @@ def compare(
     except Exception as e:
         return _error_result(assignment_id, submission_a_id, submission_b_id,
                              f"Unexpected error: {e}", "InternalError")
+    finally:
+        if use_temp:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 def batch_analyze(
@@ -313,9 +290,10 @@ def batch_analyze(
         work   = workdir / f"sub_{sub_id}"
         try:
             result = _process_submission(path, work)
-            # subtract template
+            # subtract template from both fingerprint passes
             if template_fp:
-                result["fp"] = _subtract_fingerprints(result["fp"], template_fp)
+                result["fp"]       = _subtract_fingerprints(result["fp"],       template_fp)
+                result["fp_short"] = _subtract_fingerprints(result["fp_short"], template_fp)
             return sub_id, result, None
         except Exception as e:
             return sub_id, None, str(e)
@@ -356,31 +334,43 @@ def batch_analyze(
             pa = processed[id_a]
             pb = processed[id_b]
 
-            scores = weighted_score(pa["fp"], pb["fp"])
-
-            method_sim = compute_method_similarity(
-                pa["tok_norm"], pb["tok_norm"], gram_k=_K
-            )
-            scores["method_similarity"] = round(method_sim, 4)
-            if method_sim > scores["weighted_final"] + 0.15:
-                boosted = round(0.65 * method_sim + 0.35 * scores["weighted_final"], 4)
-                scores["weighted_final"] = min(1.0, boosted)
+            scores = weighted_score(pa["fp"], pb["fp"], tok_a=pa["tok_norm"], tok_b=pb["tok_norm"])
 
             if scores["weighted_final"] < threshold:
                 continue
 
-            evidence = build_evidence_heatmap(
-                fp_passes=[
-                    (pa["fp"], pb["fp"], _K),
-                    (pa["fp_short"], pb["fp_short"], _K_SHORT),
-                ],
+            lang = pa["lang"] if pa["lang"] == pb["lang"] else "mixed"
+
+            evidence = build_evidence(
+                pa["fp"], pb["fp"],
                 tok_a=pa["tok_norm"],
                 tok_b=pb["tok_norm"],
                 source_map_a=pa["canon"].source_map,
                 source_map_b=pb["canon"].source_map,
+                k=_K,
+                merge_gap=3,
                 work_dir_a=workdir / f"sub_{id_a}",
                 work_dir_b=workdir / f"sub_{id_b}",
+                canonical_text_a=pa["canon"].canonical_text,
+                canonical_text_b=pb["canon"].canonical_text,
+                lang=lang,
             )
+            evidence_short = build_evidence(
+                pa["fp_short"], pb["fp_short"],
+                tok_a=pa["tok_norm"],
+                tok_b=pb["tok_norm"],
+                source_map_a=pa["canon"].source_map,
+                source_map_b=pb["canon"].source_map,
+                k=_K_SHORT,
+                merge_gap=3,
+                work_dir_a=workdir / f"sub_{id_a}",
+                work_dir_b=workdir / f"sub_{id_b}",
+                canonical_text_a=pa["canon"].canonical_text,
+                canonical_text_b=pb["canon"].canonical_text,
+                lang=lang,
+            )
+            evidence = _merge_evidence(evidence, evidence_short)
+            evidence = _deduplicate_evidence_1to1(evidence)
 
             flags = detect_obfuscation(
                 tok_a_raw=pa["tok_raw"],
@@ -390,8 +380,6 @@ def batch_analyze(
                 fp_a_norm=pa["fp"],
                 fp_b_norm=pb["fp"],
             )
-
-            lang = pa["lang"] if pa["lang"] == pb["lang"] else "mixed"
 
             pairs.append({
                 "submission_a":      id_a,
@@ -440,6 +428,71 @@ def _merge_evidence(primary: list, supplementary: list) -> list:
     strength_order = {"high": 0, "medium": 1, "low": 2}
     merged.sort(key=lambda e: strength_order.get(e["match_strength"], 3))
     return merged
+
+
+def _deduplicate_evidence_1to1(evidence: list) -> list:
+    """
+    Enforce 1-to-1 mapping: each line region in A maps to at most one
+    region in B, and vice versa.
+
+    Sort by (strength, block size) descending so HIGH + large blocks
+    claim their lines first. Any block that overlaps already-claimed
+    lines on either side is dropped.
+
+    This eliminates the many-to-many noise where a 2-line boilerplate
+    in A matches the same 2-line pattern at every method boundary in B.
+    """
+    strength_rank = {"high": 2, "medium": 1, "low": 0}
+
+    def sort_key(b):
+        rank = strength_rank.get(b.get("match_strength", "low"), 0)
+        size = (b["lines_a"][1] - b["lines_a"][0]) + (b["lines_b"][1] - b["lines_b"][0])
+        return (rank, size)
+
+    claimed_a: set = set()
+    claimed_b: set = set()
+    result = []
+
+    for block in sorted(evidence, key=sort_key, reverse=True):
+        a_lines = set(range(block["lines_a"][0], block["lines_a"][1] + 1))
+        b_lines = set(range(block["lines_b"][0], block["lines_b"][1] + 1))
+        if a_lines & claimed_a or b_lines & claimed_b:
+            continue
+        result.append(block)
+        claimed_a |= a_lines
+        claimed_b |= b_lines
+
+    result.sort(key=lambda b: (
+        -strength_rank.get(b.get("match_strength", "low"), 0),
+        b["lines_a"][0],
+    ))
+    return result
+
+
+def _build_line_highlights(evidence: list) -> tuple:
+    """
+    Derive per-line highlight strength from evidence blocks.
+    Each line gets the maximum strength of any block it appears in.
+    Returns (highlights_a, highlights_b) where each is {line_number: strength}.
+    This is the single source of truth for both Match Blocks and Full Code views.
+    """
+    strength_rank = {"high": 2, "medium": 1, "low": 0}
+    highlights_a = {}
+    highlights_b = {}
+
+    for block in evidence:
+        strength = block.get("match_strength", "low")
+        rank = strength_rank.get(strength, 0)
+
+        for line in range(block["lines_a"][0], block["lines_a"][1] + 1):
+            if rank > strength_rank.get(highlights_a.get(line), 0):
+                highlights_a[line] = strength
+
+        for line in range(block["lines_b"][0], block["lines_b"][1] + 1):
+            if rank > strength_rank.get(highlights_b.get(line), 0):
+                highlights_b[line] = strength
+
+    return highlights_a, highlights_b
 
 
 def _get_template_fingerprints(template_path: Union[str, Path], work_dir: Path) -> dict:

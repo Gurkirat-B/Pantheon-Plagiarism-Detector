@@ -9,11 +9,11 @@ map, and merge nearby matches into contiguous blocks. Each block gets a
 match strength rating (high/medium/low) based on how many tokens it spans.
 """
 
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from engine.tokenize.lex import Token
 from engine.preprocess.canonicalize import SourceMapEntry
+from engine.preprocess.strip_comments import strip_comments
 
 
 def _token_line(tokens: List[Token], idx: int) -> int:
@@ -32,18 +32,13 @@ def _canonical_line_to_source(canonical_line: int, source_map: List[SourceMapEnt
     If the line falls in a file separator or outside any mapped region,
     returns (None, None).
 
-    Uses line_map when present (built by switch→if-else expansion tracking)
-    to correctly reverse-map canonical lines even when line counts changed.
-    Falls back to 1:1 offset mapping when line_map is None.
+    Mapping is always 1:1 with a fixed offset — canonical line N in an entry
+    corresponds to original line (original_start + N - canonical_start).
     """
     for entry in source_map:
         if entry.canonical_start <= canonical_line <= entry.canonical_end:
             offset = canonical_line - entry.canonical_start
-            if entry.line_map and offset < len(entry.line_map):
-                orig_offset = entry.line_map[offset]
-            else:
-                orig_offset = offset
-            return entry.original_file, entry.original_start + orig_offset
+            return entry.original_file, entry.original_start + offset
     return None, None
 
 
@@ -85,6 +80,50 @@ def _slice_code(lines: List[str], start: int, end: int) -> str:
     return "\n".join(lines[s:e])
 
 
+def _strip_and_collapse(code: str, lang: str) -> str:
+    """
+    Strip comments from a code snippet (language-aware, handles string literals)
+    then collapse the blank lines left behind into at most one consecutive blank.
+    """
+    stripped = strip_comments(code, lang=lang)
+    lines = stripped.splitlines()
+    result = []
+    prev_blank = False
+    for line in lines:
+        trimmed = line.rstrip()
+        if not trimmed:
+            if not prev_blank:
+                result.append("")
+            prev_blank = True
+        else:
+            result.append(trimmed)
+            prev_blank = False
+    return "\n".join(result).strip()
+
+
+def _compute_line_highlights(lines: List[str], start: int, end: int, lang: str) -> List[int]:
+    """
+    Return 1-indexed line numbers within [start, end] that contain meaningful
+    code in the original source — i.e. non-comment, non-structural-only lines.
+
+    Used by the frontend to know exactly which lines to highlight in the full
+    code view, so comment-only and brace-only lines are not highlighted.
+    """
+    if not lines:
+        return []
+    s = max(1, start)
+    e = min(len(lines), end)
+    slice_text = "\n".join(lines[s - 1:e])
+    stripped = strip_comments(slice_text, lang=lang)
+    result = []
+    _structural = {"{", "}", "};", "{;", "});", "})"}
+    for i, line in enumerate(stripped.splitlines()):
+        content = line.strip()
+        if content and content not in _structural:
+            result.append(s + i)
+    return result
+
+
 def _match_strength(token_count: int) -> str:
     """
     Classify a match block by how many tokens it spans.
@@ -110,6 +149,7 @@ def build_evidence(
     work_dir_b: Optional[Path] = None,
     canonical_text_a: Optional[str] = None,
     canonical_text_b: Optional[str] = None,
+    lang: str = "mixed",
 ) -> List[dict]:
     """
     For every shared fingerprint between submission A and B, find where in
@@ -201,12 +241,12 @@ def build_evidence(
         lb1 = orig_b1 or b1
         lb2 = orig_b2 or b2
 
-        # Always show ORIGINAL source code (before normalization) so professors
-        # see the actual student code, not the canonicalized form.
-        # Only fall back to canonical text if the original file cannot be loaded.
+        # Load original source so professors see real student code (i++ stays
+        # i++, real variable names). Strip comments after loading so match
+        # blocks show only the actual matched code without comment noise.
         src_lines_a = get_lines(work_dir_a, file_a) if work_dir_a else []
         if src_lines_a:
-            code_a = _slice_code(src_lines_a, la1, la2)
+            code_a = _strip_and_collapse(_slice_code(src_lines_a, la1, la2), lang)
         elif canonical_lines_a is not None:
             code_a = "\n".join(canonical_lines_a[a1-1:a2]) if a1 <= len(canonical_lines_a) else ""
         else:
@@ -214,43 +254,49 @@ def build_evidence(
 
         src_lines_b = get_lines(work_dir_b, file_b) if work_dir_b else []
         if src_lines_b:
-            code_b = _slice_code(src_lines_b, lb1, lb2)
+            code_b = _strip_and_collapse(_slice_code(src_lines_b, lb1, lb2), lang)
         elif canonical_lines_b is not None:
             code_b = "\n".join(canonical_lines_b[b1-1:b2]) if b1 <= len(canonical_lines_b) else ""
         else:
             code_b = ""
 
-        a_span = la2 - la1
-        b_span = lb2 - lb1
-        # Skip trivial matches where either side spans fewer than 3 lines.
-        # k-gram artifacts (isolated brackets, single-statement commonalities)
-        # rarely span more than 2 lines. Requiring span >= 3 eliminates the
-        # most common false positives without hiding real copied blocks.
-        # NOTE: lowered to span < 1 because k=10 already guarantees ~10
-        # consecutive tokens per match (~1.5 lines), making span < 3 too
-        # aggressive — it was silently dropping short but genuine methods
-        # (e.g. size(), findMin, kthSmallest). Imports/stdlib are already
-        # excluded upstream by blank_output_boilerplate so they are unaffected.
-        # if a_span < 3 or b_span < 3:
-        #     continue
-        if a_span < 1 or b_span < 1:
+        # Count actual code lines after comment stripping for accurate strength.
+        # Exclude structural-only lines ({, }, };) — they don't represent
+        # real logic and inflate counts for transition blocks like closing
+        # braces + next method signature.
+        def _meaningful_lines(code: str) -> int:
+            count = 0
+            for l in code.splitlines():
+                s = l.strip()
+                if s and s not in ("{", "}", "};", "{;", "};", "});", "})"):
+                    count += 1
+            return count
+
+        a_code_lines = _meaningful_lines(code_a)
+        b_code_lines = _meaningful_lines(code_b)
+
+        # Require at least 5 meaningful code lines on each side — filters out
+        # trivial blocks that are just braces, method signatures, or short
+        # structural transitions between real copied sections.
+        if a_code_lines < 5 or b_code_lines < 5:
             continue
 
-        # rough token count for this block.
-        # ~8 tokens per line is a realistic average for typed languages (Java/C/C++).
-        # The old estimate of 3 was too low — it caused real algorithm blocks to
-        # score as LOW even when they clearly contained non-trivial copied logic.
-        token_count = (a2 - a1 + 1) * 8
+        token_count = max(a_code_lines, b_code_lines) * 8
+
+        highlights_a = _compute_line_highlights(src_lines_a, la1, la2, lang)
+        highlights_b = _compute_line_highlights(src_lines_b, lb1, lb2, lang)
 
         evidence_blocks.append({
-            "file_a":         file_a,
-            "lines_a":        [la1, la2],
-            "code_a":         code_a,
-            "file_b":         file_b,
-            "lines_b":        [lb1, lb2],
-            "code_b":         code_b,
-            "match_strength": _match_strength(token_count),
-            "tokens_matched": token_count,
+            "file_a":            file_a,
+            "lines_a":           [la1, la2],
+            "code_a":            code_a,
+            "line_highlights_a": highlights_a,
+            "file_b":            file_b,
+            "lines_b":           [lb1, lb2],
+            "code_b":            code_b,
+            "line_highlights_b": highlights_b,
+            "match_strength":    _match_strength(token_count),
+            "tokens_matched":    token_count,
         })
 
     # sort by strength descending so frontend shows worst offences first
@@ -260,147 +306,3 @@ def build_evidence(
     return evidence_blocks
 
 
-def _find_contiguous_regions(sorted_lines: List[int], gap: int = 2) -> List[Tuple[int, int]]:
-    """
-    Given a sorted list of line numbers, group them into contiguous regions.
-    Lines within `gap` of each other are merged into the same region.
-    Returns list of (start, end) tuples.
-    """
-    if not sorted_lines:
-        return []
-    regions = []
-    start = sorted_lines[0]
-    end = sorted_lines[0]
-    for line in sorted_lines[1:]:
-        if line <= end + gap + 1:
-            end = max(end, line)
-        else:
-            regions.append((start, end))
-            start = line
-            end = line
-    regions.append((start, end))
-    return regions
-
-
-def build_evidence_heatmap(
-    fp_passes: List[Tuple[Dict, Dict, int]],
-    tok_a: List[Token],
-    tok_b: List[Token],
-    source_map_a: List[SourceMapEntry],
-    source_map_b: List[SourceMapEntry],
-    work_dir_a: Optional[Path] = None,
-    work_dir_b: Optional[Path] = None,
-    canonical_text_a: Optional[str] = None,
-    canonical_text_b: Optional[str] = None,
-    gap: int = 2,
-) -> List[dict]:
-    """
-    Heat map based evidence building. Replaces the merge-gap approach.
-
-    For every shared fingerprint across all passes (k=10 and k=5), marks
-    every line it covers as hot in both files. Builds A→B line associations
-    directly from token positions so every matched line is accounted for —
-    including short methods that Winnowing attributes to boundary lines.
-
-    Contiguous hot regions become evidence blocks. No span filter needed —
-    coverage is continuous and directly tied to actual shared fingerprints.
-
-    fp_passes: list of (fp_a, fp_b, k) — one per fingerprint pass.
-    gap: how many cold lines are allowed inside a hot region before splitting.
-    """
-    hot_a: set = set()
-    hot_b: set = set()
-    a_to_b: Dict[int, set] = defaultdict(set)
-
-    for fp_a, fp_b, k in fp_passes:
-        shared = set(fp_a.keys()) & set(fp_b.keys())
-        for h in shared:
-            for pos_a in fp_a[h]:
-                a_end_tok = min(pos_a + k - 1, len(tok_a) - 1)
-                al_start = tok_a[pos_a].line
-                al_end   = tok_a[a_end_tok].line
-                for pos_b in fp_b[h]:
-                    b_end_tok = min(pos_b + k - 1, len(tok_b) - 1)
-                    bl_start = tok_b[pos_b].line
-                    bl_end   = tok_b[b_end_tok].line
-                    for al in range(al_start, al_end + 1):
-                        hot_a.add(al)
-                        for bl in range(bl_start, bl_end + 1):
-                            hot_b.add(bl)
-                            a_to_b[al].add(bl)
-
-    if not hot_a:
-        return []
-
-    a_regions = _find_contiguous_regions(sorted(hot_a), gap=gap)
-
-    canonical_lines_a = canonical_text_a.splitlines() if canonical_text_a else None
-    canonical_lines_b = canonical_text_b.splitlines() if canonical_text_b else None
-    _file_cache: Dict[str, List[str]] = {}
-
-    def get_lines(work_dir, filename):
-        key = f"{id(work_dir)}::{filename}"
-        if key not in _file_cache:
-            _file_cache[key] = _load_source_lines(work_dir, filename)
-        return _file_cache[key]
-
-    evidence_blocks = []
-
-    for (a_can_start, a_can_end) in a_regions:
-        # collect all B canonical lines paired with this A region
-        b_lines_for_region: set = set()
-        for al in range(a_can_start, a_can_end + 1):
-            b_lines_for_region.update(a_to_b.get(al, set()))
-
-        if not b_lines_for_region:
-            continue
-
-        b_regions = _find_contiguous_regions(sorted(b_lines_for_region), gap=gap)
-
-        # translate A canonical range → original source
-        file_a, orig_a1 = _canonical_line_to_source(a_can_start, source_map_a)
-        _,      orig_a2 = _canonical_line_to_source(a_can_end,   source_map_a)
-        if file_a is None:
-            file_a, orig_a1, orig_a2 = "canonical", a_can_start, a_can_end
-        la1 = orig_a1 or a_can_start
-        la2 = orig_a2 or a_can_end
-
-        src_lines_a = get_lines(work_dir_a, file_a) if work_dir_a else []
-        if src_lines_a:
-            code_a = _slice_code(src_lines_a, la1, la2)
-        elif canonical_lines_a:
-            code_a = "\n".join(canonical_lines_a[a_can_start - 1:a_can_end]) if a_can_start <= len(canonical_lines_a) else ""
-        else:
-            code_a = ""
-
-        for (b_can_start, b_can_end) in b_regions:
-            file_b, orig_b1 = _canonical_line_to_source(b_can_start, source_map_b)
-            _,      orig_b2 = _canonical_line_to_source(b_can_end,   source_map_b)
-            if file_b is None:
-                file_b, orig_b1, orig_b2 = "canonical", b_can_start, b_can_end
-            lb1 = orig_b1 or b_can_start
-            lb2 = orig_b2 or b_can_end
-
-            src_lines_b = get_lines(work_dir_b, file_b) if work_dir_b else []
-            if src_lines_b:
-                code_b = _slice_code(src_lines_b, lb1, lb2)
-            elif canonical_lines_b:
-                code_b = "\n".join(canonical_lines_b[b_can_start - 1:b_can_end]) if b_can_start <= len(canonical_lines_b) else ""
-            else:
-                code_b = ""
-
-            token_count = (a_can_end - a_can_start + 1) * 8
-            evidence_blocks.append({
-                "file_a":         file_a,
-                "lines_a":        [la1, la2],
-                "code_a":         code_a,
-                "file_b":         file_b,
-                "lines_b":        [lb1, lb2],
-                "code_b":         code_b,
-                "match_strength": _match_strength(token_count),
-                "tokens_matched": token_count,
-            })
-
-    strength_order = {"high": 0, "medium": 1, "low": 2}
-    evidence_blocks.sort(key=lambda e: strength_order.get(e["match_strength"], 3))
-    return evidence_blocks

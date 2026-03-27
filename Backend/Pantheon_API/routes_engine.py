@@ -11,7 +11,7 @@ from engine import ENGINE_VERSION
 from database import get_db_connection
 from auth import get_current_user
 from config import S3_BUCKET
-from engine import compare as engine_compare
+from engine import compare as engine_compare, batch_analyze as engine_batch_analyze
 from format_output import format_report_as_json
 # from format_output import format_report_for_backend  # plain-text version, kept for reference
 
@@ -233,6 +233,109 @@ def compare_two_submissions(
             conn.commit()
         raise HTTPException(status_code=500, detail=f"Comparison failed: {e}")
     
+@router.post("/assignments/{assignment_id}/compare-all")
+def compare_all(
+    assignment_id: UUID,
+    user: dict = Depends(get_current_user),
+):
+    _require_professor(user)
+
+    # 1) fetch all submissions with artifacts for this assignment
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.submission_id, s.user_id, a.s3_bucket, a.s3_key
+            FROM submissions s
+            JOIN artifacts a ON a.artifact_id = s.artifact_id
+            WHERE s.assignment_id = %s
+            """,
+            (str(assignment_id),),
+        ).fetchall()
+
+    if len(rows) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 submissions with artifacts are required")
+
+    # 2) create analysis run and attach all submissions
+    with get_db_connection() as conn:
+        run_row = conn.execute(
+            """
+            INSERT INTO analysis_runs (assignment_id, initiated_by, engine_version, parameters, status)
+            VALUES (%s, %s, %s, %s::jsonb, 'running')
+            RETURNING run_id
+            """,
+            (str(assignment_id), str(user["user_id"]), ENGINE_VERSION, '{"mode":"batch_all"}'),
+        ).fetchone()
+        run_id = run_row[0]
+
+        for row in rows:
+            conn.execute(
+                "INSERT INTO analysis_run_submissions (run_id, submission_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (run_id, str(row[0])),
+            )
+        conn.commit()
+
+    # 3) download all ZIPs and run batch_analyze
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_dir = Path(td)
+            submissions_list = []
+            for row in rows:
+                sub_id, student_id, bucket, key = str(row[0]), str(row[1]), row[2], row[3]
+                zip_path = tmp_dir / f"{sub_id}.zip"
+                s3.download_file(bucket, key, str(zip_path))
+                submissions_list.append({"id": sub_id, "path": str(zip_path), "student_id": student_id})
+
+            batch_result = engine_batch_analyze(submissions_list, assignment_id=str(assignment_id))
+
+        # 4) store a similarity_result + evidence row for each flagged pair
+        with get_db_connection() as conn:
+            for pair in batch_result["pairs"]:
+                score = pair["scores"]["weighted_final"]
+                result_row = conn.execute(
+                    """
+                    INSERT INTO similarity_results (run_id, score, left_submission_id, right_submission_id)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING result_id
+                    """,
+                    (run_id, score, pair["submission_a"], pair["submission_b"]),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO similarity_evidence (result_id, evidence_json) VALUES (%s, %s::jsonb)",
+                    (result_row[0], json.dumps(pair)),
+                )
+            conn.execute(
+                "UPDATE analysis_runs SET status = 'completed', completed_at = now() WHERE run_id = %s",
+                (run_id,),
+            )
+            conn.commit()
+
+        return {
+            "run_id": str(run_id),
+            "assignment_id": str(assignment_id),
+            "total_pairs": batch_result["total_pairs"],
+            "flagged_pairs": batch_result["flagged_pairs"],
+            "threshold_used": batch_result["threshold_used"],
+            "pairs": [
+                {
+                    "submission_a": p["submission_a"],
+                    "submission_b": p["submission_b"],
+                    "score": p["scores"]["weighted_final"],
+                    "language_detected": p["language_detected"],
+                }
+                for p in batch_result["pairs"]
+            ],
+            "preprocessing_errors": batch_result.get("preprocessing_errors"),
+        }
+
+    except Exception as e:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE analysis_runs SET status = 'failed', completed_at = now() WHERE run_id = %s",
+                (run_id,),
+            )
+            conn.commit()
+        raise HTTPException(status_code=500, detail=f"Batch comparison failed: {e}")
+
 
 @router.get("/similarity-score")
 def get_similarity_score(

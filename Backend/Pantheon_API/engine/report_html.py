@@ -71,34 +71,41 @@ def format_report_html(result: Dict) -> str:
     flags      = result.get("obfuscation_flags", [])
     version    = result.get("engine_version", "3.0.0")
 
-    source_a     = result.get("source_code_a", "")
-    source_b     = result.get("source_code_b", "")
-    line_mapping   = result.get("line_mapping", [])
-    line_mapping_b = result.get("line_mapping_b", [])
+    # Use original (pre-canonicalization) source code so the report shows
+    # what the student actually submitted, not the normalized form.
+    # original_sources_a/b are dicts {filename: text}; join for single-file
+    # submissions, or concatenate for multi-file ZIPs.
+    orig_a = result.get("original_sources_a") or {}
+    orig_b = result.get("original_sources_b") or {}
+    source_a = "\n".join(orig_a.values()) if orig_a else result.get("source_code_a", "")
+    source_b = "\n".join(orig_b.values()) if orig_b else result.get("source_code_b", "")
 
     lines_a = source_a.splitlines() if source_a else []
     lines_b = source_b.splitlines() if source_b else []
 
-    # Build per-line color lookups
-    # A-side: use A-perspective mapping
-    line_colors_a: Dict[int, str] = {}
-    for m in line_mapping:
-        if m["color"] != "none":
-            line_colors_a[m["line_a"]] = m["color"]
+    # strength → CSS highlight class
+    _strength_color = {"high": "red", "medium": "orange", "low": "yellow"}
 
-    # B-side: use B-perspective mapping (line_a in line_mapping_b is actually a B line)
-    line_colors_b: Dict[int, str] = {}
-    for m in line_mapping_b:
-        if m["color"] != "none":
-            line_colors_b[m["line_a"]] = m["color"]
+    # Build per-line color from the deduplicated evidence highlights.
+    # line_highlights_a/b: {line_number: "high"/"medium"/"low"}
+    highlights_a = result.get("line_highlights_a") or {}
+    highlights_b = result.get("line_highlights_b") or {}
+    line_colors_a: Dict[int, str] = {
+        int(ln): _strength_color.get(s, "yellow")
+        for ln, s in highlights_a.items()
+    }
+    line_colors_b: Dict[int, str] = {
+        int(ln): _strength_color.get(s, "yellow")
+        for ln, s in highlights_b.items()
+    }
 
     level    = _score_to_level(score)
     meta     = _LEVEL_META[level]
     pct      = f"{score * 100:.1f}%"
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Count highlighted lines per level
-    counts_a = {"red": 0, "orange": 0, "yellow": 0, "green": 0}
+    # Count highlighted lines per strength
+    counts_a = {"red": 0, "orange": 0, "yellow": 0}
     for c in line_colors_a.values():
         if c in counts_a:
             counts_a[c] += 1
@@ -398,19 +405,15 @@ def format_report_html(result: Dict) -> str:
         <div class="legend">
             <div class="legend-item">
                 <div class="legend-swatch" style="background:#ffe0de;border-color:#e74c3c;"></div>
-                <span><strong>CRITICAL</strong> (&ge;85% match)</span>
+                <span><strong>HIGH</strong> match (large block)</span>
             </div>
             <div class="legend-item">
                 <div class="legend-swatch" style="background:#fff3e0;border-color:#e67e22;"></div>
-                <span><strong>HIGH</strong> (65–84%)</span>
+                <span><strong>MEDIUM</strong> match</span>
             </div>
             <div class="legend-item">
                 <div class="legend-swatch" style="background:#fffde7;border-color:#f1c40f;"></div>
-                <span><strong>MEDIUM</strong> (40–64%)</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-swatch" style="background:#e8f5e9;border-color:#27ae60;"></div>
-                <span><strong>LOW</strong> (15–39%)</span>
+                <span><strong>LOW</strong> match (small block)</span>
             </div>
             <div class="legend-item">
                 <div class="legend-swatch" style="background:#f9f9f9;"></div>
@@ -421,19 +424,15 @@ def format_report_html(result: Dict) -> str:
         <div class="stats-bar" style="margin-bottom:14px;">
             <span class="stat">
                 <span class="stat-dot" style="background:#e74c3c;"></span>
-                {counts_a['red']} CRITICAL lines
+                {counts_a['red']} HIGH lines
             </span>
             <span class="stat">
                 <span class="stat-dot" style="background:#e67e22;"></span>
-                {counts_a['orange']} HIGH lines
+                {counts_a['orange']} MEDIUM lines
             </span>
             <span class="stat">
                 <span class="stat-dot" style="background:#f1c40f;"></span>
-                {counts_a['yellow']} MEDIUM lines
-            </span>
-            <span class="stat">
-                <span class="stat-dot" style="background:#27ae60;"></span>
-                {counts_a['green']} LOW lines
+                {counts_a['yellow']} LOW lines
             </span>
             <span class="stat" style="margin-left:8px; color:#aaa;">
                 {total_highlighted} / {total_lines_a} lines flagged in submission A
