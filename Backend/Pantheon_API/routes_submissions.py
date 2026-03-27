@@ -174,9 +174,8 @@ def get_uploads(user: dict = Depends(get_current_user)):
         ]
     }
 
-@router.post("/repo/{repository_id}")
+@router.post("/repo")
 async def upload_to_repo(
-    repository_id: UUID,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
@@ -198,15 +197,17 @@ async def upload_to_repo(
             detail="ZIP must contain at least one .java, .cpp, or .c file",
         )
 
-    # verify repository exists and belongs to this professor
+    # look up the repository belonging to this professor
     with get_db_connection() as conn:
         repo = conn.execute(
-            "SELECT repository_id FROM repositories WHERE repository_id = %s AND owner_id = %s",
-            (str(repository_id), str(user["user_id"])),
+            "SELECT repository_id FROM repositories WHERE owner_id = %s",
+            (str(user["user_id"]),),
         ).fetchone()
 
     if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found or access denied")
+        raise HTTPException(status_code=404, detail="No repository found for this user")
+
+    repository_id = repo[0]
 
     # upload to S3
     new_key = f"repositories/{repository_id}/{file.filename}"
