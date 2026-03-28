@@ -1,13 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  User,
-  Mail,
-  KeyRound,
-  Trash2,
-  ShieldCheck,
-} from "lucide-react";
+import { User, Mail, KeyRound, Trash2, ShieldCheck } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -359,12 +353,13 @@ function DeleteAccountDialog({
 export function AccountButton({ name, email }: AccountButtonProps) {
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
 
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const initials =
+    (name ?? "")
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?";
 
   return (
     <>
@@ -391,10 +386,10 @@ export function AccountButton({ name, email }: AccountButtonProps) {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-800">
-                  {name}
+                  {name || "Professor"}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {email}
+                  {email || "—"}
                 </p>
               </div>
             </div>
