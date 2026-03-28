@@ -88,8 +88,8 @@ def login(body: LoginRequest):
                 raise HTTPException(status_code=404, detail="Assignment not found")
             
             if not row:
-                user_id = register_user(conn, name = None, email = body.email, role = "student", password = None)
-                token = create_token(str(user_id), "student")
+                user_row = register_user(conn, name = None, email = body.email, role = "student", password = None)
+                token = create_token(str(user_row[0]), "student")
                 return {"access_token": token, "token_type": "bearer", "message": "Student registered and logged in"}
             # Student exists, proceed with login (no password required)
             token = create_token(str(row[0]), row[2])
