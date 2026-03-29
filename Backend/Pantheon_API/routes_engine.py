@@ -288,9 +288,12 @@ def compare_all(
             batch_result = engine_batch_analyze(submissions_list, assignment_id=str(assignment_id))
 
         # 4) store a similarity_result + evidence row for each flagged pair
+        #    format_report_as_json() is called here so both compare and compare-all
+        #    store the same schema in similarity_evidence (same as the pairwise path)
         with get_db_connection() as conn:
             for pair in batch_result["pairs"]:
                 score = pair["scores"]["weighted_final"]
+                json_report = format_report_as_json(pair)
                 result_row = conn.execute(
                     """
                     INSERT INTO similarity_results (run_id, score, left_submission_id, right_submission_id)
@@ -301,7 +304,7 @@ def compare_all(
                 ).fetchone()
                 conn.execute(
                     "INSERT INTO similarity_evidence (result_id, evidence_json) VALUES (%s, %s::jsonb)",
-                    (result_row[0], json.dumps(pair)),
+                    (result_row[0], json.dumps(json_report)),
                 )
             conn.execute(
                 "UPDATE analysis_runs SET status = 'completed', completed_at = now() WHERE run_id = %s",
