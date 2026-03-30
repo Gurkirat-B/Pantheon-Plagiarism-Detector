@@ -9,7 +9,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent.parent / "Backend" / "Pantheon_API"
 sys.path.insert(0, str(backend_path))
 
-from engine.similarity.scores import jaccard, dice, containment, weighted_score
+from engine.similarity.scores import jaccard, containment, weighted_score
 
 
 class TestSimilarityScores:
@@ -53,36 +53,6 @@ class TestSimilarityScores:
         score_ba = jaccard(fp_b, fp_a)
         assert score_ab == score_ba
 
-    def test_dice_identical(self, identical_fingerprints):
-        """Identical fingerprints should score 1.0 Dice."""
-        fp_a, fp_b = identical_fingerprints
-        score = dice(fp_a, fp_b)
-        assert score == 1.0
-
-    def test_dice_disjoint(self, completely_different_fingerprints):
-        """Completely different fingerprints should score 0.0 Dice."""
-        fp_a, fp_b = completely_different_fingerprints
-        score = dice(fp_a, fp_b)
-        assert score == 0.0
-
-    def test_dice_partial(self, partial_overlap_fingerprints):
-        """Partial overlap should score between 0 and 1."""
-        fp_a, fp_b = partial_overlap_fingerprints
-        score = dice(fp_a, fp_b)
-        assert 0 < score < 1
-
-    def test_dice_empty_both(self, empty_fingerprints):
-        """Both empty should score 1.0."""
-        fp_a, fp_b = empty_fingerprints
-        score = dice(fp_a, fp_b)
-        assert score == 1.0
-
-    def test_dice_symmetric(self, partial_overlap_fingerprints):
-        """Dice should be symmetric."""
-        fp_a, fp_b = partial_overlap_fingerprints
-        score_ab = dice(fp_a, fp_b)
-        score_ba = dice(fp_b, fp_a)
-        assert score_ab == score_ba
 
     def test_containment_identical(self, identical_fingerprints):
         """Identical fingerprints should score 1.0 containment."""
@@ -151,22 +121,20 @@ class TestSimilarityScores:
         assert 0 <= final_score <= 1
 
     def test_weighted_score_contains_components(self, identical_fingerprints):
-        """Weighted score should return jaccard, dice, containment components."""
+        """Weighted score should return jaccard and containment components."""
         fp_a, fp_b = identical_fingerprints
         result = weighted_score(fp_a, fp_b)
         # Should contain similarity metrics
-        assert any(key in result for key in ["jaccard", "dice", "containment", "weighted_final"])
+        assert any(key in result for key in ["jaccard", "containment", "weighted_final"])
 
     def test_score_range_always_valid(self, partial_overlap_fingerprints):
         """All scores should be in [0, 1] range."""
         fp_a, fp_b = partial_overlap_fingerprints
         j_score = jaccard(fp_a, fp_b)
-        d_score = dice(fp_a, fp_b)
         c_score = containment(fp_a, fp_b)
         w_result = weighted_score(fp_a, fp_b)
 
         assert 0 <= j_score <= 1
-        assert 0 <= d_score <= 1
         assert 0 <= c_score <= 1
         w_score = w_result.get("weighted_final", w_result.get("score"))
         assert 0 <= w_score <= 1
