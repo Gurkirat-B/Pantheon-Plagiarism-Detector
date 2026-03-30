@@ -285,7 +285,7 @@ def compare_all(
                 s3.download_file(bucket, key, str(zip_path))
                 submissions_list.append({"id": sub_id, "path": str(zip_path), "student_id": student_id})
 
-            batch_result = engine_batch_analyze(submissions_list, assignment_id=str(assignment_id))
+            batch_result = engine_batch_analyze(submissions_list, assignment_id=str(assignment_id), threshold=0.0)
 
         # 4) store a similarity_result + evidence row for each flagged pair
         #    format_report_as_json() is called here so both compare and compare-all

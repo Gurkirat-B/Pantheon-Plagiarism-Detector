@@ -132,7 +132,7 @@ def get_my_account(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         row = conn.execute(
             """
-            SELECT user_id, name, email, role
+            SELECT user_id, name, email
             FROM users
             WHERE user_id = %s
             """,
@@ -149,5 +149,4 @@ def get_my_account(user: dict = Depends(get_current_user)):
         "user_id": row[0],
         "name": row[1],
         "email": row[2],
-        "role": row[3]
     }
