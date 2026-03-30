@@ -1,12 +1,14 @@
 March 30, 2026
 
+General
   - Booked the following week's meeting
   - Went over the Project stage 3 document
 
+
 - Engine
   - Fine-tune the similarity metrics
-  - Removing cross-code comparisons. 
-  - Work on the template provided by prof. strip that 
+  - Removing cross-code comparisons
+  - Work on the template provided by prof strip that 
   - work on multiple submissions within the .ZIP file DONE
   - Strip student name and email from every submission LOW PRIORITY 
   - Working on line colour choices
@@ -18,6 +20,14 @@ Backend
   - Cleaning
   - Security 
   - Adding course change API
+  - Add logic to not add an assignment for an old date 
+  - For the detail button in the assignment dashboard, it should show the assignment code fully for that student
+  - Comparissons for previous year submissions 
+  - Add api for course change names 
+  - The instructor to compare past assignments 
+  - Comparissons for previous year submissions 
+  - Remove assignments/course/{course_id} api 
+  - fix the language selector so it works
 
 
 UI
@@ -25,4 +35,5 @@ UI
   - Cleaning
   - Testing all links
   - Working on line colour choices
-
+  - Add a button to switch the view to ascending order LOW PRIORITY
+ 
