@@ -7,7 +7,8 @@ March 30, 2026
   - Fine-tune the similarity metrics
   - Removing cross-code comparisons. 
   - Work on the template provided by prof. strip that 
-  - work on multiple submissions within the .ZIP file LOW PRIORITY
+  - work on multiple submissions within the .ZIP file DONE
+  - Strip student name and email from every submission LOW PRIORITY 
 
 
 Backend
