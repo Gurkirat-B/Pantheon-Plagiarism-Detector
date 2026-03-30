@@ -7,8 +7,10 @@ export type CodeMatch = {
   severity: MatchSeverity;
   fileA: string;
   linesA: string;
+  lineHighlightsA: number[];
   fileB: string;
   linesB: string;
+  lineHighlightsB: number[];
   codeA: string;
   codeB: string;
 };
@@ -18,7 +20,7 @@ export type ComparisonReport = {
   submissionB: string;
   language: string;
   similarityScore: number;
-  plagiarismLevel: string;  // "HIGH", "MEDIUM", "LOW", "CRITICAL"
+  plagiarismLevel: string; // "HIGH", "MEDIUM", "LOW", "CRITICAL"
   techniques: string[];
   totalBlocks: number;
   highCount: number;
@@ -45,9 +47,7 @@ export function mapReport(json: Record<string, unknown>): ComparisonReport {
     highCount: Number(json.High ?? 0),
     mediumCount: Number(json.Medium ?? 0),
     lowCount: Number(json.Low ?? 0),
-    matches: Array.isArray(json.matches)
-      ? (json.matches as CodeMatch[])
-      : [],
+    matches: Array.isArray(json.matches) ? (json.matches as CodeMatch[]) : [],
     fullCodeA: (json.fullCodeA as Record<string, string>) ?? {},
     fullCodeB: (json.fullCodeB as Record<string, string>) ?? {},
   };
@@ -61,36 +61,26 @@ export type HighlightRange = {
   severity: MatchSeverity;
 };
 
-// Parse "4 - 29" → { start: 4, end: 29 }
-function parseLineRange(linesStr: string): { start: number; end: number } | null {
-  const match = linesStr.match(/(\d+)\s*-\s*(\d+)/);
-  if (!match) return null;
-  return { start: parseInt(match[1]), end: parseInt(match[2]) };
-}
-
 // Build a map of line number → highlight severity for a given file in fullCode
 // side: "A" or "B"
 export function buildHighlightMap(
   matches: CodeMatch[],
   fileName: string,
-  side: "A" | "B"
+  side: "A" | "B",
 ): Map<number, MatchSeverity> {
   const map = new Map<number, MatchSeverity>();
 
   for (const match of matches) {
     const file = side === "A" ? match.fileA : match.fileB;
-    const lines = side === "A" ? match.linesA : match.linesB;
+    const highlights =
+      side === "A" ? match.lineHighlightsA : match.lineHighlightsB;
 
     if (file !== fileName) continue;
 
-    const range = parseLineRange(lines);
-    if (!range) continue;
-
-    for (let i = range.start; i <= range.end; i++) {
-      // Higher severity wins if line is in multiple matches
-      const existing = map.get(i);
+    for (const lineNum of highlights) {
+      const existing = map.get(lineNum);
       if (!existing || severityRank(match.severity) > severityRank(existing)) {
-        map.set(i, match.severity);
+        map.set(lineNum, match.severity);
       }
     }
   }
@@ -100,8 +90,11 @@ export function buildHighlightMap(
 
 function severityRank(s: MatchSeverity): number {
   switch (s) {
-    case "HIGH": return 3;
-    case "MEDIUM": return 2;
-    case "LOW": return 1;
+    case "HIGH":
+      return 3;
+    case "MEDIUM":
+      return 2;
+    case "LOW":
+      return 1;
   }
 }

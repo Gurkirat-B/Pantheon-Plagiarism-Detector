@@ -59,36 +59,110 @@ function formatDateTime(dateStr: string) {
 
 function getSeverityClass(severity: MatchSeverity) {
   switch (severity) {
-    case "HIGH":   return "border-red-200 bg-red-50 text-red-700";
-    case "MEDIUM": return "border-orange-200 bg-orange-50 text-orange-700";
-    case "LOW":    return "border-yellow-200 bg-yellow-50 text-yellow-700";
+    case "HIGH":
+      return "border-red-200 bg-red-50 text-red-700";
+    case "MEDIUM":
+      return "border-orange-200 bg-orange-50 text-orange-700";
+    case "LOW":
+      return "border-yellow-200 bg-yellow-50 text-yellow-700";
   }
 }
 
 function getHighlightBg(severity: MatchSeverity) {
   switch (severity) {
-    case "HIGH":   return "bg-red-900/40";
-    case "MEDIUM": return "bg-orange-900/40";
-    case "LOW":    return "bg-yellow-900/30";
+    case "HIGH":
+      return "bg-red-300";
+    case "MEDIUM":
+      return "bg-orange-200";
+    case "LOW":
+      return "bg-yellow-200";
   }
 }
 
 function getLevelColor(level: string) {
   switch (level) {
-    case "CRITICAL": return "text-red-600";
-    case "HIGH":     return "text-orange-500";
-    case "MEDIUM":   return "text-yellow-600";
-    default:         return "text-emerald-600";
+    case "CRITICAL":
+      return "text-red-600";
+    case "HIGH":
+      return "text-orange-500";
+    case "MEDIUM":
+      return "text-yellow-600";
+    default:
+      return "text-emerald-600";
   }
 }
 
 function getLevelBg(level: string) {
   switch (level) {
-    case "CRITICAL": return "bg-red-50 border-red-200";
-    case "HIGH":     return "bg-orange-50 border-orange-200";
-    case "MEDIUM":   return "bg-yellow-50 border-yellow-200";
-    default:         return "bg-emerald-50 border-emerald-200";
+    case "CRITICAL":
+      return "bg-red-50 border-red-200";
+    case "HIGH":
+      return "bg-orange-50 border-orange-200";
+    case "MEDIUM":
+      return "bg-yellow-50 border-yellow-200";
+    default:
+      return "bg-emerald-50 border-emerald-200";
   }
+}
+
+// ─── Inline comment splitter ──────────────────────────────────────────────────
+
+function splitInlineComment(
+  line: string,
+  language: string,
+): { code: string; comment: string | null } {
+  const lang = language.toLowerCase();
+
+  // Determine comment markers for this language
+  const markers: string[] = [];
+  if (["java", "c", "cpp", "js", "ts"].some((l) => lang.includes(l))) {
+    markers.push("//");
+  }
+  if (lang.includes("python")) {
+    markers.push("#");
+  }
+  // All languages: inline /* ... */ — find /* that has a closing */ on same line
+  const blockIdx = line.indexOf("/*");
+  if (blockIdx !== -1 && line.indexOf("*/", blockIdx) !== -1) {
+    return {
+      code: line.slice(0, blockIdx),
+      comment: line.slice(blockIdx),
+    };
+  }
+
+  // Find earliest marker not inside a string
+  let earliest: { idx: number; marker: string } | null = null;
+  for (const marker of markers) {
+    const idx = findCommentIndex(line, marker);
+    if (idx !== -1 && (earliest === null || idx < earliest.idx)) {
+      earliest = { idx, marker };
+    }
+  }
+
+  if (!earliest) return { code: line, comment: null };
+  return {
+    code: line.slice(0, earliest.idx),
+    comment: line.slice(earliest.idx),
+  };
+}
+
+// Finds the index of a comment marker that is not inside a string literal
+function findCommentIndex(line: string, marker: string): number {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (!inSingle && !inDouble && line.startsWith(marker, i)) return i;
+  }
+  return -1;
 }
 
 // ─── Match Code Panel (used in match blocks) ──────────────────────────────────
@@ -131,56 +205,74 @@ function FullCodePanel({
   fileName,
   code,
   highlightMap,
+  language,
 }: {
   label: string;
   fileName: string;
   code: string;
   highlightMap: Map<number, MatchSeverity>;
+  language: string;
 }) {
   const lines = code.split("\n");
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-slate-700">
-      <div className="border-b border-slate-700 bg-slate-800 px-4 py-3">
-        <p className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
+    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-slate-200">
+      <div className="border-b border-slate-200 bg-gray-200 px-4 py-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-500">
           {label}
         </p>
-        <p className="mt-0.5 font-mono text-sm font-semibold text-slate-100">
+        <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
           {fileName}
         </p>
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
+        <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-red-900/60" />
+            <span className="inline-block h-2 w-3 rounded-sm bg-red-300" />
             High
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-orange-900/60" />
+            <span className="inline-block h-2 w-3 rounded-sm bg-orange-200" />
             Medium
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-yellow-900/50" />
+            <span className="inline-block h-2 w-3 rounded-sm bg-yellow-200" />
             Low
           </span>
         </div>
       </div>
-      <div className="flex-1 overflow-auto bg-slate-900">
+
+      <div className="flex-1 overflow-auto bg-muted">
         <table className="w-full font-mono text-sm">
           <tbody>
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
               const severity = highlightMap.get(lineNum);
+              const { code: codePart, comment } = severity
+                ? splitInlineComment(line, language)
+                : { code: line, comment: null };
+
+              const highlightSpanClass = severity
+                ? `rounded-sm px-0.5 ${getHighlightBg(severity)}`
+                : "";
+
               return (
-                <tr
-                  key={lineNum}
-                  className={severity ? getHighlightBg(severity) : ""}
-                >
+                <tr key={lineNum} className="leading-relaxed">
                   {/* Line number gutter */}
-                  <td className="w-10 select-none px-3 py-0 text-right text-slate-600 align-top">
+                  <td className="w-10 select-none px-3 py-0 text-right align-top text-slate-300">
                     {lineNum}
                   </td>
-                  {/* Code */}
-                  <td className="px-3 py-0 leading-relaxed text-emerald-400">
-                    <pre className="whitespace-pre">{line}</pre>
+
+                  {/* Code cell */}
+                  <td className="px-3 py-0">
+                    <pre className="whitespace-pre text-slate-800">
+                      {severity ? (
+                        <>
+                          <span className={highlightSpanClass}>{codePart}</span>
+                          {comment && <span>{comment}</span>}
+                        </>
+                      ) : (
+                        line
+                      )}
+                    </pre>
                   </td>
                 </tr>
               );
@@ -215,7 +307,9 @@ function MatchBlock({ match }: { match: CodeMatch }) {
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>A: lines {match.linesA} · B: lines {match.linesB}</span>
+          <span>
+            A: lines {match.linesA} · B: lines {match.linesB}
+          </span>
           {expanded ? (
             <ChevronUp className="h-4 w-4" />
           ) : (
@@ -328,10 +422,14 @@ function ComparisonDialog({
                   className={`h-6 w-6 ${getLevelColor(report.plagiarismLevel)}`}
                 />
                 <div>
-                  <p className={`text-2xl font-bold ${getLevelColor(report.plagiarismLevel)}`}>
+                  <p
+                    className={`text-2xl font-bold ${getLevelColor(report.plagiarismLevel)}`}
+                  >
                     {report.similarityScore}% Similarity
                   </p>
-                  <p className={`text-sm font-medium ${getLevelColor(report.plagiarismLevel)}`}>
+                  <p
+                    className={`text-sm font-medium ${getLevelColor(report.plagiarismLevel)}`}
+                  >
                     {report.plagiarismLevel}
                   </p>
                 </div>
@@ -392,12 +490,14 @@ function ComparisonDialog({
                   fileName={fileNameA}
                   code={fullCodeA}
                   highlightMap={highlightMapA}
+                  language={report.language}
                 />
                 <FullCodePanel
                   label="Submission B"
                   fileName={fileNameB}
                   code={fullCodeB}
                   highlightMap={highlightMapB}
+                  language={report.language}
                 />
               </div>
             </div>
@@ -437,7 +537,9 @@ function SubmissionRow({
       }`}
     >
       <div className="flex items-center gap-4">
-        <div className={`transition-opacity ${showCheckbox ? "opacity-100" : "opacity-0"}`}>
+        <div
+          className={`transition-opacity ${showCheckbox ? "opacity-100" : "opacity-0"}`}
+        >
           <Checkbox
             checked={isSelected}
             onCheckedChange={onSelect}
@@ -477,14 +579,19 @@ function SubmissionRow({
               comparisonScore >= 60
                 ? "text-red-500"
                 : comparisonScore >= 30
-                ? "text-orange-400"
-                : "text-emerald-500"
+                  ? "text-orange-400"
+                  : "text-emerald-500"
             }`}
           >
             {comparisonScore}%
           </span>
         )}
-        <Button size="sm" variant="outline" onClick={onDetail} className="gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onDetail}
+          className="gap-1.5"
+        >
           <Code2 className="h-3.5 w-3.5" />
           Detail
         </Button>
@@ -544,10 +651,13 @@ export function AssignmentView({
             submission_a_id: idA,
             submission_b_id: idB,
           }),
-        }
+        },
       );
 
-      if (res.status === 401) { router.push("/"); return; }
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
       if (!res.ok) throw new Error();
 
       const json = await res.json();
@@ -576,7 +686,11 @@ export function AssignmentView({
   const selectedCount = selectedIds.size;
   const canTriggerCompare = selectedCount === 2;
   const avgScore = report ? report.similarityScore : null;
-  const highRisk = report && (report.plagiarismLevel === "CRITICAL" || report.plagiarismLevel === "HIGH") ? 1 : 0;
+  const highRisk =
+    report &&
+    (report.plagiarismLevel === "CRITICAL" || report.plagiarismLevel === "HIGH")
+      ? 1
+      : 0;
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 min-[2000px]:max-w-[2000px]">
@@ -615,7 +729,9 @@ export function AssignmentView({
               <Users className="h-5 w-5 text-slate-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-800">{submissions.length}</p>
+              <p className="text-2xl font-bold text-slate-800">
+                {submissions.length}
+              </p>
               <p className="text-sm text-muted-foreground">Total Submissions</p>
             </div>
           </CardContent>
@@ -642,7 +758,9 @@ export function AssignmentView({
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-800">{highRisk}</p>
-              <p className="text-sm text-muted-foreground">High Risk (&ge;60%)</p>
+              <p className="text-sm text-muted-foreground">
+                High Risk (&ge;60%)
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -657,8 +775,9 @@ export function AssignmentView({
               <span className="text-slate-500">{assignment.title}</span>
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {submissions.length} submission{submissions.length !== 1 ? "s" : ""}{" "}
-              · Select exactly 2 to compare
+              {submissions.length} submission
+              {submissions.length !== 1 ? "s" : ""} · Select exactly 2 to
+              compare
             </p>
           </div>
 
@@ -699,7 +818,9 @@ export function AssignmentView({
                   isSelected={selectedIds.has(submission.submission_id)}
                   onSelect={() => toggleSelect(submission.submission_id)}
                   onDetail={() => handleDetail(submission)}
-                  comparisonScore={isPartOfComparison ? comparedPair!.score : null}
+                  comparisonScore={
+                    isPartOfComparison ? comparedPair!.score : null
+                  }
                 />
               );
             })
