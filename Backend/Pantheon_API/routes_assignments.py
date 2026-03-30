@@ -1,5 +1,5 @@
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +15,17 @@ router = APIRouter(prefix="/assignments", tags=["assignments"])
 def _require_professor(user: dict):
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Professor role required")
+
+
+def _check_due_date_not_in_past(due_date: datetime | None):
+    if due_date is None:
+        return
+    now = datetime.now(timezone.utc)
+    # make due_date offset-aware if it isn't already
+    if due_date.tzinfo is None:
+        due_date = due_date.replace(tzinfo=timezone.utc)
+    if due_date <= now:
+        raise HTTPException(status_code=400, detail="due_date must be in the future")
 
 # Enum for supported languages
 class SupportedLanguage(str, Enum):
@@ -44,6 +55,8 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
             status_code=400,
             detail=f"language must be one of {sorted(allowed_languages)}"
         )
+
+    _check_due_date_not_in_past(body.due_date)
 
     with get_db_connection() as conn:
         course = conn.execute(
@@ -78,37 +91,6 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
         "created_at": row[5].isoformat() if row[5] else None,
         "message": "Assignment created successfully"
     }
-
-
-@router.get("/course/{course_id}")
-def list_assignments_by_course(course_id: UUID, user: dict = Depends(get_current_user)):
-    _require_professor(user)
-
-    with get_db_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT assignment_id, course_id, title, language, due_date, created_at
-            FROM assignments
-            WHERE course_id = %s
-            ORDER BY created_at DESC
-            """,
-            (str(course_id),)
-        ).fetchall()
-
-    return {
-        "assignments": [
-            {
-                "assignment_id": str(r[0]),
-                "course_id": str(r[1]),
-                "title": r[2],
-                "language": r[3],
-                "due_date": r[4].isoformat() if r[4] else None,
-                "created_at": r[5].isoformat() if r[5] else None,
-            }
-            for r in rows
-        ]
-    }
-
 
 @router.get("/{assignment_id}")
 def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
@@ -174,6 +156,14 @@ def edit_assignment(
     and programming language for the assignment.
     """
     _require_professor(user)
+
+    try:
+        due_date_parsed = datetime.fromisoformat(body.due_date) if body.due_date else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="due_date is not a valid ISO 8601 datetime")
+
+    _check_due_date_not_in_past(due_date_parsed)
+
     with get_db_connection() as conn:
         # Check if the assignment exists and if the professor is authorized to edit it
         assignment = conn.execute(

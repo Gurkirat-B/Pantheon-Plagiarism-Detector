@@ -19,6 +19,11 @@ class CreateCourseRequest(BaseModel):
     name: str
 
 
+class EditCourseRequest(BaseModel):
+    code: str
+    name: str
+
+
 @router.post("/")
 def create_course(body: CreateCourseRequest, user: dict = Depends(get_current_user)):
     _require_professor(user)
@@ -131,6 +136,52 @@ def get_course(course_id: UUID, user: dict = Depends(get_current_user)):
             }
             for a in assignments
         ]
+    }
+
+
+@router.put("/{course_id}")
+def edit_course(course_id: UUID, body: EditCourseRequest, user: dict = Depends(get_current_user)):
+    _require_professor(user)
+
+    with get_db_connection() as conn:
+        # Ensure the course exists and belongs to this professor
+        row = conn.execute(
+            """
+            SELECT c.course_id FROM courses c
+            JOIN enrollments e ON c.course_id = e.course_id
+            WHERE c.course_id = %s AND e.user_id = %s
+            """,
+            (str(course_id), str(user["user_id"])),
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        # Check new code isn't taken by a different course
+        conflict = conn.execute(
+            "SELECT course_id FROM courses WHERE code = %s AND course_id != %s",
+            (body.code, str(course_id)),
+        ).fetchone()
+
+        if conflict:
+            raise HTTPException(status_code=409, detail="Course code already exists")
+
+        updated = conn.execute(
+            """
+            UPDATE courses SET code = %s, name = %s
+            WHERE course_id = %s
+            RETURNING course_id, code, name
+            """,
+            (body.code, body.name, str(course_id)),
+        ).fetchone()
+
+        conn.commit()
+
+    return {
+        "course_id": str(updated[0]),
+        "code": updated[1],
+        "name": updated[2],
+        "message": "Course updated successfully"
     }
 
 

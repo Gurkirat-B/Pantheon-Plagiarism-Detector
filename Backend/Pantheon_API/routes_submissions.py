@@ -171,18 +171,30 @@ async def upload_submission(
     # check file type
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are allowed")
-    
+
+    # fetch assignment language from DB
+    with get_db_connection() as conn:
+        assignment_row = conn.execute(
+            "SELECT language FROM assignments WHERE assignment_id = %s",
+            (str(assignment_id),),
+        ).fetchone()
+
+    if not assignment_row:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    allowed_exts = {f".{assignment_row[0].lower()}"}
+
     # read file bytes
     file_bytes = await file.read()
     size = len(file_bytes)
 
-    # verify zip contains at least one allowed source file
-    if not _zip_contains_allowed_source(file_bytes):
+    # verify zip contains at least one source file matching the assignment language
+    if not _zip_contains_allowed_source(file_bytes, allowed_exts):
         raise HTTPException(
             status_code=400,
-            detail="ZIP must contain at least one .java, .cpp, or .c file",
+            detail=f"ZIP must contain at least one .{assignment_row[0].lower()} file",
         )
-    
+
     # Look up current submission's S3 pointer (if any)
     with get_db_connection() as conn:
         existing = conn.execute(
