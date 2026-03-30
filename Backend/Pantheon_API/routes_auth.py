@@ -19,6 +19,14 @@ class LoginRequest(BaseModel):
     assignment_id: UUID | None = None   # required only for students
     role: str
 
+    
+class GetUserResponse(BaseModel):
+    user_id: UUID
+    name: str
+    email: EmailStr
+    role: str
+
+
 def register_user(conn, name, email, role, password=None):
     hashed_password = hash_password(password) if password else None
     row = conn.execute(
@@ -107,3 +115,39 @@ def get_role(user: dict = Depends(get_current_user)):
     Returns the role associated with that token (as validated by get_current_user).
     """
     return {"role": user["role"]}
+
+@router.get("/me", response_model=GetUserResponse)
+def get_my_account(user: dict = Depends(get_current_user)):
+    """
+    Professor My Account API.
+    Provide Authorization: Bearer <token>
+    Returns the logged-in professor's account details.
+    """
+    if user["role"] != "professor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only professors can access this endpoint"
+        )
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT user_id, name, email, role
+            FROM users
+            WHERE user_id = %s
+            """,
+            (user["user_id"],)
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+    return {
+        "user_id": row[0],
+        "name": row[1],
+        "email": row[2],
+        "role": row[3]
+    }
