@@ -36,4 +36,9 @@ UI
   - Testing all links
   - Working on line colour choices
   - Add a button to switch the view to ascending order LOW PRIORITY
- 
+
+
+Meeting with Dave
+  - Show same colours for similar code blocks on the front end so it displays all the capbility of our engine
+  - Get rid off the duplicates analysis scores
+  - The boiler plate code submission using the student client format actually means that the instructor should be able to just submit a zip file like a student just submits a zip. But we will be adding a button on the prof view which will let them upload a boiler plate code for a specific assignment.
