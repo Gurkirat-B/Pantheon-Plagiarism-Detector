@@ -2,46 +2,39 @@ After the demo
 
 Frontend
 - Think about api calls for multiple buttons vs load the whole page DONE
-- The code will be COSC 4P02, but the name will be the actual course name for visual purposes 
-- Add email confirmation for submission LOW PRIORITY 
+- The code will be COSC 4P02, but the name will be the actual course name for visual purposes DONE
 - Add timestamps for logins LOW LOW PRIORITY
-- Add the feature to download the whole Similarity score LOW PRIORITY
 - Add light and dark mode 
-- Add a "my account" to the professor view 
-- Add logic to not add an assignment for an old date 
-- Remove the fact that when you create a new assignment and click cancel, the information is already there 
+- Add a "my account" to the professor view DONE
+- Add logic to not add an assignment for an old date
+- Remove the fact that when you create a new assignment and click cancel, the information is already there DONE
 - For the detail button in the assignment dashboard, it should show the assignment code fully for that student
-- "List of students" button on Course page LOW PRIORITY
-- Remove student password page
-- Remove student score page
-- Remove student submission id page after submission
-- Remove student assignment successfully submitted page
-- Connect course change api name to UI
+- Remove student password page DONE
+- Remove student score page DONE
+- Remove student submission id page after submission DONE
+- Connect course change api name to UI DONE
 
 
 Engine
-- Ability to set up auto-comparisons as submissions are made 
-- fix the issue where a zip inside a zip doesn't register for the student view file submission LOW PRIORITY
-- Creating a test suite 
-- Doing robust testing
-- Show the analysis runs, from all the submission, in a descending order by default; and add a button to switch the view to ascending order LOW PRIORITY
+- fix the issue where a zip inside a zip doesn't register for the student view file submission DONE
+- Creating a test suite HIGH PRIORITY
+- Doing robust testing HIGH PRIOIRTY
+- Show the analysis runs, from all the submission, in a descending order by default DONE
+- Add a button to switch the view to ascending order LOW PRIORITY
 
 
 Backend
-- "List of students" button on Course page
 - Create a folder for previous year submissions HIGH PRIORITY
-- fix the language selector so it works 
-- Add the ability to change the language after an assignment is created 
+- Add the ability to change the language after an assignment is created DONEE
 - Add api for course change names 
 - The instructor to compare past assignments 
-- Remove extra settings from assignments api
-- Remove assignments/course/{course_id} api
-- Add the feature to download the whole Similarity score LOW PRIORITY
+- Remove extra settings from assignments api DONE
+- Remove assignments/course/{course_id} api 
 - Add logic to not add an assignment for an old date 
-- fix the language selector so it works 
+- fix the language selector so it works
 
 
-Not Needed
+Not Adding Anymore
 - Create a student view to review their submission score after they submit the file
   - Students will use their submission ID to check their score after (the frontend will create this page) 
 - Adding a verification process to know the person accessing the assignment is actually a student 
@@ -50,6 +43,11 @@ Not Needed
 - Add timestamps for student submissions in their pop-up
 - Add a user guide for the software 
 - Add logout to student view
+- Add email confirmation for submission
+- Add the feature to download the whole Similarity score
+- "List of students" button on Course page
+- Ability to set up auto-comparisons for submissions
+- fix the language selector so it works 
 
 
 Espionage
