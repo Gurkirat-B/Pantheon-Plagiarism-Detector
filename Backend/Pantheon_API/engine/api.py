@@ -381,14 +381,26 @@ def batch_analyze(
                 fp_b_norm=pb["fp"],
             )
 
+            # Load original sources for display (fullCodeA / fullCodeB).
+            # Uses the same helper as pairwise compare() — work dirs are still
+            # on disk at this point so file reads are safe.
+            original_sources_a = _load_original_sources(
+                workdir / f"sub_{id_a}", pa["canon"].source_map
+            )
+            original_sources_b = _load_original_sources(
+                workdir / f"sub_{id_b}", pb["canon"].source_map
+            )
+
             pairs.append({
-                "submission_a":      id_a,
-                "submission_b":      id_b,
-                "language_detected": lang,
-                "scores":            scores,
-                "obfuscation_flags": flags,
-                "evidence":          evidence,
-                "status":            "completed",
+                "submission_a":       id_a,
+                "submission_b":       id_b,
+                "language_detected":  lang,
+                "scores":             scores,
+                "obfuscation_flags":  flags,
+                "evidence":           evidence,
+                "status":             "completed",
+                "original_sources_a": original_sources_a,
+                "original_sources_b": original_sources_b,
             })
 
     pairs.sort(key=lambda p: p["scores"]["weighted_final"], reverse=True)
