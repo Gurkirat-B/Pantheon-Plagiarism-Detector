@@ -15,13 +15,14 @@ import {
   ChevronUp,
   Layers,
   FileCode,
+  Play,
+  Info,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,8 +30,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingButton } from "@/components/LoadingButton";
+import { toast } from "@/hooks/use-toast";
 
-import type { AssignmentDetail, CourseInfo, Submission } from "./page";
+import type {
+  AssignmentDetail,
+  CourseInfo,
+  Submission,
+  SimilarityReport,
+} from "./page";
 import {
   mapReport,
   buildHighlightMap,
@@ -105,6 +112,27 @@ function getLevelBg(level: string) {
   }
 }
 
+// Score is 0–100 (from similarityScore field)
+function getScoreSeverity(score: number): {
+  label: string;
+  className: string;
+} {
+  if (score >= 80)
+    return {
+      label: "HIGH",
+      className: "border-red-200 bg-red-50 text-red-700",
+    };
+  if (score >= 50)
+    return {
+      label: "MEDIUM",
+      className: "border-yellow-200 bg-yellow-50 text-yellow-700",
+    };
+  return {
+    label: "LOW",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  };
+}
+
 // ─── Inline comment splitter ──────────────────────────────────────────────────
 
 function splitInlineComment(
@@ -113,7 +141,6 @@ function splitInlineComment(
 ): { code: string; comment: string | null } {
   const lang = language.toLowerCase();
 
-  // Determine comment markers for this language
   const markers: string[] = [];
   if (["java", "c", "cpp", "js", "ts"].some((l) => lang.includes(l))) {
     markers.push("//");
@@ -121,7 +148,6 @@ function splitInlineComment(
   if (lang.includes("python")) {
     markers.push("#");
   }
-  // All languages: inline /* ... */ — find /* that has a closing */ on same line
   const blockIdx = line.indexOf("/*");
   if (blockIdx !== -1 && line.indexOf("*/", blockIdx) !== -1) {
     return {
@@ -130,7 +156,6 @@ function splitInlineComment(
     };
   }
 
-  // Find earliest marker not inside a string
   let earliest: { idx: number; marker: string } | null = null;
   for (const marker of markers) {
     const idx = findCommentIndex(line, marker);
@@ -146,7 +171,6 @@ function splitInlineComment(
   };
 }
 
-// Finds the index of a comment marker that is not inside a string literal
 function findCommentIndex(line: string, marker: string): number {
   let inSingle = false;
   let inDouble = false;
@@ -165,7 +189,7 @@ function findCommentIndex(line: string, marker: string): number {
   return -1;
 }
 
-// ─── Match Code Panel (used in match blocks) ──────────────────────────────────
+// ─── Match Code Panel ─────────────────────────────────────────────────────────
 
 function MatchCodePanel({
   label,
@@ -198,7 +222,7 @@ function MatchCodePanel({
   );
 }
 
-// ─── Full Code Panel (used in full code view, with line highlights) ───────────
+// ─── Full Code Panel ──────────────────────────────────────────────────────────
 
 function FullCodePanel({
   label,
@@ -256,12 +280,9 @@ function FullCodePanel({
 
               return (
                 <tr key={lineNum} className="leading-relaxed">
-                  {/* Line number gutter */}
                   <td className="w-10 select-none px-3 py-0 text-right align-top text-slate-300">
                     {lineNum}
                   </td>
-
-                  {/* Code cell */}
                   <td className="px-3 py-0">
                     <pre className="whitespace-pre text-slate-800">
                       {severity ? (
@@ -358,20 +379,17 @@ function ComparisonDialog({
 
   if (!report) return null;
 
-  // Get file names from fullCode objects
   const fileNameA = Object.keys(report.fullCodeA)[0] ?? "Submission A";
   const fileNameB = Object.keys(report.fullCodeB)[0] ?? "Submission B";
   const fullCodeA = report.fullCodeA[fileNameA] ?? "";
   const fullCodeB = report.fullCodeB[fileNameB] ?? "";
 
-  // Build highlight maps for full code view
   const highlightMapA = buildHighlightMap(report.matches, fileNameA, "A");
   const highlightMapB = buildHighlightMap(report.matches, fileNameB, "B");
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden p-0">
-        {/* Header */}
         <DialogHeader className="border-b px-6 py-5">
           <div className="flex items-center justify-between">
             <div>
@@ -383,7 +401,6 @@ function ComparisonDialog({
               </p>
             </div>
 
-            {/* View toggle */}
             <div className="flex items-center rounded-lg border bg-muted p-1">
               <button
                 onClick={() => setViewMode("blocks")}
@@ -412,7 +429,6 @@ function ComparisonDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
-          {/* ── Summary banner ── */}
           <div
             className={`mx-6 mt-6 rounded-xl border p-5 ${getLevelBg(report.plagiarismLevel)}`}
           >
@@ -435,7 +451,6 @@ function ComparisonDialog({
                 </div>
               </div>
 
-              {/* Block breakdown */}
               <div className="flex items-center gap-3 text-sm">
                 <span className="rounded-md bg-red-100 px-2.5 py-1 font-semibold text-red-700">
                   {report.highCount} HIGH
@@ -450,7 +465,6 @@ function ComparisonDialog({
             </div>
           </div>
 
-          {/* ── Techniques ── */}
           {report.techniques.length > 0 && (
             <div className="mx-6 mt-5">
               <p className="mb-2 text-sm font-semibold text-slate-700">
@@ -466,7 +480,6 @@ function ComparisonDialog({
             </div>
           )}
 
-          {/* ── Match Blocks view ── */}
           {viewMode === "blocks" && (
             <div className="mx-6 my-5 space-y-3">
               <p className="text-sm font-semibold text-slate-700">
@@ -478,7 +491,6 @@ function ComparisonDialog({
             </div>
           )}
 
-          {/* ── Full Code view ── */}
           {viewMode === "fullcode" && (
             <div className="mx-6 my-5">
               <p className="mb-3 text-sm font-semibold text-slate-700">
@@ -508,94 +520,203 @@ function ComparisonDialog({
   );
 }
 
+// ─── Report List Dialog ───────────────────────────────────────────────────────
+
+function ReportListDialog({
+  open,
+  onClose,
+  submission,
+  reports,
+  onOpenReport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  submission: Submission | null;
+  reports: SimilarityReport[];
+  onOpenReport: (sr: SimilarityReport) => void;
+}) {
+  if (!submission) return null;
+
+  // Match using the camelCase fields the API actually returns
+  const matching = reports.filter(
+    (r) =>
+      r.submissionA === submission.submission_id ||
+      r.submissionB === submission.submission_id,
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Reports for {submission.email}</DialogTitle>
+        </DialogHeader>
+        <div className="mt-2 space-y-3">
+          {matching.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No reports found.
+            </p>
+          ) : (
+            matching.map((sr) => {
+              const otherId =
+                sr.submissionA === submission.submission_id
+                  ? sr.submissionB
+                  : sr.submissionA;
+              // similarityScore is already 0–100
+              const sev = getScoreSeverity(sr.similarityScore);
+              const reportKey = `${sr.submissionA}_${sr.submissionB}`;
+
+              return (
+                <button
+                  key={reportKey}
+                  onClick={() => onOpenReport(sr)}
+                  className={`w-full rounded-lg border p-4 text-left transition-colors hover:opacity-80 ${sev.className}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-bold tabular-nums">
+                          {sr.similarityScore.toFixed(1)}%
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs font-semibold ${sev.className}`}
+                        >
+                          {sev.label}
+                        </Badge>
+                      </div>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        vs {otherId}
+                      </p>
+                      <p className="text-xs capitalize text-muted-foreground">
+                        {sr.language}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Compare All Success Dialog ───────────────────────────────────────────────
+
+function CompareAllSuccessDialog({
+  open,
+  onClose,
+  totalPairs,
+  flaggedPairs,
+}: {
+  open: boolean;
+  onClose: () => void;
+  totalPairs: number;
+  flaggedPairs: number;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm text-center">
+        <div className="flex flex-col items-center gap-4 py-4">
+          {/* Icon */}
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+            <ShieldAlert className="h-7 w-7 text-emerald-600" />
+          </div>
+
+          <div className="space-y-1">
+            <DialogTitle className="text-xl">Analysis Complete</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              All submission pairs have been compared.
+            </p>
+          </div>
+
+          {/* Stats */}
+          <div className="w-full divide-y rounded-lg border bg-slate-50">
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="text-sm text-muted-foreground">
+                Total pairs analysed
+              </span>
+              <span className="text-sm font-semibold text-slate-800">
+                {totalPairs}
+              </span>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="text-sm text-muted-foreground">
+                Flagged pairs
+              </span>
+              <span
+                className={`text-sm font-semibold ${flaggedPairs > 0 ? "text-red-600" : "text-emerald-600"}`}
+              >
+                {flaggedPairs}
+              </span>
+            </div>
+          </div>
+          <div className="flex w-full items-start gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+            <p className="text-xs leading-relaxed text-blue-700">
+              To review results, click the{" "}
+              <span className="inline-flex items-center gap-1 font-medium">
+                <Code2 className="h-3 w-3" />
+                Detail
+              </span>{" "}
+              button on any submission to see its similarity reports.
+            </p>
+          </div>
+          <Button onClick={onClose} className="w-full">
+            Done
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Submission Row ───────────────────────────────────────────────────────────
 
 function SubmissionRow({
   submission,
-  isSelected,
-  onSelect,
   onDetail,
-  comparisonScore,
 }: {
   submission: Submission;
-  isSelected: boolean;
-  onSelect: () => void;
   onDetail: () => void;
-  comparisonScore?: number | null;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const showCheckbox = hovered || isSelected;
-
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={`flex items-center justify-between rounded-lg border px-5 py-4 transition-colors ${
-        isSelected
-          ? "border-slate-800 bg-slate-50 ring-1 ring-slate-800"
-          : "bg-white hover:bg-slate-50"
-      }`}
-    >
-      <div className="flex items-center gap-4">
-        <div
-          className={`transition-opacity ${showCheckbox ? "opacity-100" : "opacity-0"}`}
-        >
-          <Checkbox
-            checked={isSelected}
-            onCheckedChange={onSelect}
-            aria-label="Select submission"
-          />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold text-slate-800">
-              {submission.email}
-            </span>
-            <Badge variant="outline" className="font-mono text-xs">
-              {submission.original_zip_name}
-            </Badge>
-            <Badge
-              variant="outline"
-              className={`text-xs capitalize ${
-                submission.status === "accepted"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-slate-200 text-slate-500"
-              }`}
-            >
-              {submission.status}
-            </Badge>
-          </div>
-          <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            Submitted: {formatDateTime(submission.submitted_at)}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        {comparisonScore != null && (
-          <span
-            className={`text-lg font-bold tabular-nums ${
-              comparisonScore >= 60
-                ? "text-red-500"
-                : comparisonScore >= 30
-                  ? "text-orange-400"
-                  : "text-emerald-500"
+    <div className="flex items-center justify-between rounded-lg border bg-white px-5 py-4 transition-colors hover:bg-slate-50">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-semibold text-slate-800">
+            {submission.email}
+          </span>
+          <Badge variant="outline" className="font-mono text-xs">
+            {submission.original_zip_name}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={`text-xs capitalize ${
+              submission.status === "accepted"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 text-slate-500"
             }`}
           >
-            {comparisonScore}%
-          </span>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onDetail}
-          className="gap-1.5"
-        >
-          <Code2 className="h-3.5 w-3.5" />
-          Detail
-        </Button>
+            {submission.status}
+          </Badge>
+        </div>
+        <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+          <Clock className="h-3.5 w-3.5" />
+          Submitted: {formatDateTime(submission.submitted_at)}
+        </p>
       </div>
+
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onDetail}
+        className="gap-1.5"
+      >
+        <Code2 className="h-3.5 w-3.5" />
+        Detail
+      </Button>
     </div>
   );
 }
@@ -605,96 +726,99 @@ function SubmissionRow({
 export function AssignmentView({
   assignment,
   course,
+  initialReports,
 }: {
   assignment: AssignmentDetail;
   course: CourseInfo;
+  initialReports: SimilarityReport[];
 }) {
   const router = useRouter();
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [comparing, setComparing] = useState(false);
+  const [reports, setReports] = useState<SimilarityReport[]>(initialReports);
+  const [comparingAll, setComparingAll] = useState(false);
   const [report, setReport] = useState<ComparisonReport | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [comparedPair, setComparedPair] = useState<{
-    idA: string;
-    idB: string;
-    score: number;
+  const [detailSubmission, setDetailSubmission] = useState<Submission | null>(
+    null,
+  );
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [compareAllResult, setCompareAllResult] = useState<{
+    totalPairs: number;
+    flaggedPairs: number;
   } | null>(null);
 
   const submissions = assignment.submissions;
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        if (next.size >= 2) return prev;
-        next.add(id);
-      }
-      return next;
-    });
+  // Re-fetch reports from the same endpoint used server-side, one call per submission
+  const refreshReports = async () => {
+    const ids = submissions.map((s) => s.submission_id).join(",");
+    const res = await fetch(
+      `/api/engine/similarity-report?submission_ids=${ids}`,
+    );
+
+    if (res.status === 401) {
+      router.push("/");
+      return;
+    }
+    if (!res.ok) return;
+
+    const data: SimilarityReport[] = await res.json();
+    setReports(Array.isArray(data) ? data : []);
   };
 
-  const handleCompare = async () => {
-    const [idA, idB] = Array.from(selectedIds);
-    if (!idA || !idB) return;
-
-    setComparing(true);
+  const handleCompareAll = async () => {
+    setComparingAll(true);
     try {
       const res = await fetch(
-        `/api/engine/assignments/${assignment.assignment_id}/compare`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            submission_a_id: idA,
-            submission_b_id: idB,
-          }),
-        },
+        `/api/engine/assignments/${assignment.assignment_id}/compare-all`,
+        { method: "POST", headers: { Accept: "application/json" } },
       );
 
       if (res.status === 401) {
         router.push("/");
         return;
       }
+      if (res.status === 400) {
+        toast({ variant: "destructive", title: "Invalid assignment ID" });
+        return;
+      }
       if (!res.ok) throw new Error();
 
-      const json = await res.json();
-      const parsed = mapReport(json);
-      setReport(parsed);
-      setComparedPair({ idA, idB, score: parsed.similarityScore });
-      setDialogOpen(true);
+      const result = await res.json();
+      await refreshReports();
+      setCompareAllResult({
+        totalPairs: result.total_pairs ?? 0,
+        flaggedPairs: result.flagged_pairs ?? 0,
+      });
+      setSuccessDialogOpen(true);
     } catch {
-      console.error("Comparison failed.");
+      toast({ variant: "destructive", title: "Comparison failed." });
     } finally {
-      setComparing(false);
+      setComparingAll(false);
     }
   };
 
-  const handleDetail = (submission: Submission) => {
-    const isPartOfComparison =
-      comparedPair &&
-      (comparedPair.idA === submission.submission_id ||
-        comparedPair.idB === submission.submission_id);
-
-    if (isPartOfComparison && report) {
-      setDialogOpen(true);
-    }
+  // The GET endpoint already returns full report data — no second fetch needed
+  const handleOpenReport = (sr: SimilarityReport) => {
+    const parsed = mapReport(sr);
+    setReport(parsed);
+    setDetailSubmission(null);
+    setDialogOpen(true);
   };
 
-  const selectedCount = selectedIds.size;
-  const canTriggerCompare = selectedCount === 2;
-  const avgScore = report ? report.similarityScore : null;
-  const highRisk =
-    report &&
-    (report.plagiarismLevel === "CRITICAL" || report.plagiarismLevel === "HIGH")
-      ? 1
-      : 0;
+  // Stats: similarityScore is already 0–100
+  const avgScore =
+    reports.length > 0
+      ? Math.round(
+          (reports.reduce((sum, r) => sum + r.similarityScore, 0) /
+            reports.length) *
+            10,
+        ) / 10
+      : null;
+  const highRisk = reports.filter((r) => r.similarityScore >= 80).length;
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 min-[2000px]:max-w-[2000px]">
-      {/* Back */}
       <Button
         variant="ghost"
         size="sm"
@@ -705,7 +829,6 @@ export function AssignmentView({
         Back to Dashboard
       </Button>
 
-      {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span className="font-medium">{course.code}</span>
@@ -721,7 +844,6 @@ export function AssignmentView({
         </p>
       </div>
 
-      {/* Stat cards */}
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
@@ -759,14 +881,13 @@ export function AssignmentView({
             <div>
               <p className="text-2xl font-bold text-slate-800">{highRisk}</p>
               <p className="text-sm text-muted-foreground">
-                High Risk (&ge;60%)
+                High Risk (&ge;80%)
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Submissions list */}
       <div className="rounded-xl border bg-white shadow-sm">
         <div className="flex items-center justify-between px-6 py-5">
           <div>
@@ -776,24 +897,17 @@ export function AssignmentView({
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {submissions.length} submission
-              {submissions.length !== 1 ? "s" : ""} · Select exactly 2 to
-              compare
+              {submissions.length !== 1 ? "s" : ""}
             </p>
           </div>
 
           <LoadingButton
-            onClick={handleCompare}
-            disabled={!canTriggerCompare}
-            loading={comparing}
+            onClick={handleCompareAll}
+            loading={comparingAll}
             className="gap-2"
           >
-            <Code2 className="h-4 w-4" />
-            {comparing ? "Analysing..." : "Compare Selected"}
-            {!comparing && selectedCount > 0 && (
-              <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-xs">
-                {selectedCount}/2
-              </span>
-            )}
+            <Play className="h-4 w-4" />
+            {comparingAll ? "Analysing..." : "Compare All"}
           </LoadingButton>
         </div>
 
@@ -805,33 +919,36 @@ export function AssignmentView({
               No submissions yet for this assignment.
             </div>
           ) : (
-            submissions.map((submission) => {
-              const isPartOfComparison =
-                comparedPair &&
-                (comparedPair.idA === submission.submission_id ||
-                  comparedPair.idB === submission.submission_id);
-
-              return (
-                <SubmissionRow
-                  key={submission.submission_id}
-                  submission={submission}
-                  isSelected={selectedIds.has(submission.submission_id)}
-                  onSelect={() => toggleSelect(submission.submission_id)}
-                  onDetail={() => handleDetail(submission)}
-                  comparisonScore={
-                    isPartOfComparison ? comparedPair!.score : null
-                  }
-                />
-              );
-            })
+            submissions.map((submission) => (
+              <SubmissionRow
+                key={submission.submission_id}
+                submission={submission}
+                onDetail={() => setDetailSubmission(submission)}
+              />
+            ))
           )}
         </div>
       </div>
+
+      <ReportListDialog
+        open={detailSubmission !== null}
+        onClose={() => setDetailSubmission(null)}
+        submission={detailSubmission}
+        reports={reports}
+        onOpenReport={handleOpenReport}
+      />
 
       <ComparisonDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         report={report}
+      />
+
+      <CompareAllSuccessDialog
+        open={successDialogOpen}
+        onClose={() => setSuccessDialogOpen(false)}
+        totalPairs={compareAllResult?.totalPairs ?? 0}
+        flaggedPairs={compareAllResult?.flaggedPairs ?? 0}
       />
     </main>
   );
