@@ -16,6 +16,7 @@ export type Submission = {
   s3_bucket: string;
   s3_key: string;
   similarity_score?: number | null;
+  has_comparison: boolean;
 };
 
 export type AssignmentDetail = {
@@ -112,9 +113,11 @@ async function getReports(
   submissions: Submission[],
 ): Promise<SimilarityReport[]> {
   if (submissions.length === 0) return [];
+  const withComparisons = submissions.filter((s) => s.has_comparison);
+  if (withComparisons.length === 0) return [];
 
   const batches = await Promise.all(
-    submissions.map(async (s) => {
+    withComparisons.map(async (s) => {
       const res = await fetch(
         `${process.env.BACKEND_URL}/engine/similarity-report?submission_id=${s.submission_id}`,
         {
