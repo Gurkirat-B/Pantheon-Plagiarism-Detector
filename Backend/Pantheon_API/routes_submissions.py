@@ -82,84 +82,105 @@ def get_uploads(user: dict = Depends(get_current_user)):
         ]
     }
 
-@router.post("/repo")
+@router.post("/repo/{assignment_id}")
 async def upload_to_repo(
+    assignment_id: UUID,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can upload to a repository")
 
-    # check file type
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are allowed")
 
-    # read file bytes
     file_bytes = await file.read()
-    size = len(file_bytes)
 
-    # verify zip contains at least one allowed source file
-    if not _zip_contains_allowed_source(file_bytes):
-        raise HTTPException(
-            status_code=400,
-            detail="ZIP must contain at least one .java, .cpp, or .c file",
-        )
+    try:
+        outer_zip = zipfile.ZipFile(io.BytesIO(file_bytes))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid .zip archive")
 
-    # look up the repository belonging to this professor
+    # Look up the repository linked to this assignment, owned by this professor
     with get_db_connection() as conn:
         repo = conn.execute(
-            "SELECT repository_id FROM repositories WHERE owner_id = %s",
-            (str(user["user_id"]),),
+            """
+            SELECT repository_id FROM repositories
+            WHERE assignment_id = %s AND owner_id = %s
+            """,
+            (str(assignment_id), str(user["user_id"])),
         ).fetchone()
 
     if not repo:
-        raise HTTPException(status_code=404, detail="No repository found for this user")
+        raise HTTPException(status_code=404, detail="No repository found for this assignment")
 
     repository_id = repo[0]
 
-    # upload to S3
-    new_key = f"repositories/{repository_id}/{file.filename}"
-    try:
-        s3.put_object(
-            Bucket=S3_BUCKET,
-            Key=new_key,
-            Body=file_bytes,
-            ContentType="application/zip",
-        )
-    except ClientError as e:
-        raise HTTPException(status_code=502, detail=f"Failed to upload to S3: {e}")
+    # Collect inner zip entries, ignoring directories and macOS junk
+    with outer_zip:
+        inner_files = [
+            info for info in outer_zip.infolist()
+            if not info.filename.endswith("/")
+            and info.filename.lower().endswith(".zip")
+            and not info.filename.lower().startswith("__macosx/")
+        ]
 
-    # upsert artifact, insert new repository_upload record
-    with get_db_connection() as conn:
-        artifact_row = conn.execute(
-            """
-            INSERT INTO artifacts (s3_bucket, s3_key, original_name, content_type, size_bytes)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (s3_bucket, s3_key) DO UPDATE
-              SET original_name = EXCLUDED.original_name,
-                  size_bytes    = EXCLUDED.size_bytes,
-                  content_type  = EXCLUDED.content_type
-            RETURNING artifact_id
-            """,
-            (S3_BUCKET, new_key, file.filename, "application/zip", size),
-        ).fetchone()
+        if not inner_files:
+            raise HTTPException(status_code=400, detail="Repository ZIP contains no inner .zip files")
 
-        upload_row = conn.execute(
-            """
-            INSERT INTO repository_uploads (repository_id, artifact_id, filename)
-            VALUES (%s, %s, %s)
-            RETURNING upload_id
-            """,
-            (str(repository_id), str(artifact_row[0]), file.filename),
-        ).fetchone()
+        uploaded = []
+        with get_db_connection() as conn:
+            for info in inner_files:
+                inner_bytes = outer_zip.read(info.filename)
+                inner_name = info.filename.split("/")[-1]  # strip any directory prefix from path
+                s3_key = f"repositories/{repository_id}/{inner_name}"
 
-        conn.commit()
+                try:
+                    s3.put_object(
+                        Bucket=S3_BUCKET,
+                        Key=s3_key,
+                        Body=inner_bytes,
+                        ContentType="application/zip",
+                    )
+                except ClientError as e:
+                    raise HTTPException(status_code=502, detail=f"Failed to upload {inner_name} to S3: {e}")
+
+                artifact_row = conn.execute(
+                    """
+                    INSERT INTO artifacts (s3_bucket, s3_key, original_name, content_type, size_bytes)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (s3_bucket, s3_key) DO UPDATE
+                      SET original_name = EXCLUDED.original_name,
+                          size_bytes    = EXCLUDED.size_bytes,
+                          content_type  = EXCLUDED.content_type
+                    RETURNING artifact_id
+                    """,
+                    (S3_BUCKET, s3_key, inner_name, "application/zip", len(inner_bytes)),
+                ).fetchone()
+
+                upload_row = conn.execute(
+                    """
+                    INSERT INTO repository_uploads (repository_id, artifact_id, filename)
+                    VALUES (%s, %s, %s)
+                    RETURNING upload_id
+                    """,
+                    (str(repository_id), str(artifact_row[0]), inner_name),
+                ).fetchone()
+
+                uploaded.append({
+                    "upload_id": str(upload_row[0]),
+                    "filename": inner_name,
+                    "s3_key": s3_key,
+                    "size_bytes": len(inner_bytes),
+                })
+
+            conn.commit()
 
     return {
-        "upload_id": str(upload_row[0]),
-        "s3_key": new_key,
-        "size_bytes": size,
-        "message": "File uploaded to repository successfully"
+        "repository_id": str(repository_id),
+        "uploaded_count": len(uploaded),
+        "uploads": uploaded,
+        "message": "Repository uploaded successfully"
     }
 
 @router.post("/{assignment_id}")

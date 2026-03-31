@@ -80,6 +80,19 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
                 body.language,
             )
         ).fetchone()
+
+        conn.execute(
+            """
+            INSERT INTO repositories (owner_id, name, assignment_id)
+            VALUES (%s, %s, %s)
+            """,
+            (
+                str(user["user_id"]),
+                body.title,
+                str(row[0]),
+            )
+        )
+
         conn.commit()
 
     return {
