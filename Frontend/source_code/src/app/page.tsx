@@ -27,7 +27,7 @@ export default async function HomePage() {
             id="hero-section"
             className="text-center text-5xl font-bold sm:text-4xl lg:text-left xl:text-6xl 2xl:text-7xl"
           >
-            Pantheon Code Plagiarism Detector
+            Code Plagiarism Detector
           </h1>
           <p className="m-auto max-w-lg text-center text-lg lg:m-0 lg:max-w-none lg:text-left">
             Web-based plagiarism detection system for academic programming
