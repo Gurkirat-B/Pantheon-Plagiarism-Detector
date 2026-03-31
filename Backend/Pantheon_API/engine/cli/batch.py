@@ -24,7 +24,7 @@ def main():
     ap = argparse.ArgumentParser(description="Pantheon engine: batch compare a folder of submissions")
     ap.add_argument("--folder",    required=True,        help="Folder containing submissions")
     ap.add_argument("--assign",    default=None,         help="Assignment ID")
-    ap.add_argument("--threshold", type=float, default=0.4)
+    ap.add_argument("--threshold", type=float, default=0.0)
     ap.add_argument("--workers",   type=int,   default=4)
     ap.add_argument("--workdir",   default=None)
     ap.add_argument("--pretty",    action="store_true")

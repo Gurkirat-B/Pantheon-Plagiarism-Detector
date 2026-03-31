@@ -240,7 +240,7 @@ def compare(
 def batch_analyze(
     submissions: List[dict],
     assignment_id: Optional[str] = None,
-    threshold: float = 0.4,
+    threshold: float = 0.0,
     workdir: Optional[Union[str, Path]] = None,
     max_workers: int = 4,
     template_path: Optional[Union[str, Path]] = None,
