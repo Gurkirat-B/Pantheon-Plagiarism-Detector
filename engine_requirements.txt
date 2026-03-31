@@ -1,0 +1,148 @@
+# Pantheon Engine — Requirements & To-Do
+
+---
+
+## What Each File Does
+
+**`engine/api.py`**
+Master orchestrator. The only file the backend imports from. Two public functions: `compare()` for two specific submissions, `batch_analyze()` for all-vs-all. All pipeline steps are wired here in sequence.
+
+**`engine/evidence/evidence.py`**
+Builds the matching code blocks shown to the professor. For every shared fingerprint hash, finds token positions in both submissions, maps them back to original file line numbers via `source_map`, and merges nearby matches into contiguous blocks. Each block has: file names, line ranges, code snippets, match strength (high/medium/low), and `line_highlights_a/b` (meaningful line numbers only — excludes comment-only and brace-only lines via `_compute_line_highlights()`).
+
+**`engine/similarity/scores.py`**
+Computes the similarity score using k-gram overlap and Winnowing math. Returns `weighted_final` (0.0–1.0).
+
+**`engine/fingerprint/kgrams.py`**
+Generates k-grams from the token stream and applies Winnowing to select representative fingerprints. Two passes: k=10/W=5 (primary) and k=5/W=3 (supplementary for short methods).
+
+**`engine/tokenize/lex.py`**
+Tokenizes source code into a normalized token stream. Supports Java, Python, C/C++, JS/TS.
+
+**`engine/preprocess/strip_comments.py`**
+Strips single and multi-line comments. Used during fingerprinting and inside `_compute_line_highlights()`.
+
+**`engine/preprocess/canonicalize.py`**
+Normalizes identifiers (-> ID) and literals (-> NUM/STR/CHR) so renamed variables don't evade detection. Returns `canonical_text` and `source_map` (maps canonical line numbers back to original files).
+
+**`engine/preprocess/stdlib_filter.py`**
+Blanks out standard boilerplate lines (print, input, main) so they don't inflate scores.
+
+**`engine/ingest/ingest.py`**
+Reads a `.zip`, extracts supported source files into a working directory.
+
+**`engine/obfuscation/detect.py`**
+Detects obfuscation techniques: identifier renaming, loop type swaps, dead code insertion, literal substitution, reordering, etc. Returns a list of flag strings.
+
+**`engine/version.py`**
+`ENGINE_VERSION` constant.
+
+**`engine/__init__.py`**
+Exposes `compare` and `batch_analyze`. Do not touch.
+
+**`engine/cli/compare.py`** / **`engine/cli/batch.py`**
+Local dev testing tools. Not called by backend.
+Run as: `python -m engine.cli.compare --a a.zip --b b.zip --pretty`
+
+**`engine/report.py`** / **`engine/report_html.py`**
+Legacy. Not used in production. Do not touch.
+
+**`format_output.py`** (outside engine/)
+Converts engine result dict into the JSON shape the frontend expects.
+Key function: `format_report_as_json()`. Passes through `line_highlights_a/b` per match block to frontend.
+
+**`routes_engine.py`** (outside engine/)
+FastAPI routes. Calls engine functions, handles S3 download, writes results to DB.
+The bridge between engine and everything else.
+
+---
+
+## What Works Today
+
+- Full `compare()` pipeline end-to-end: ingest, tokenize, canonicalize, fingerprint, score, evidence, obfuscation detection, return structured dict
+- Per-block `line_highlights_a/b` via `_compute_line_highlights()` — excludes comment-only and brace-only lines, used by match block view
+- Top-level `line_highlights_a/b` via `_build_line_highlights()` — range-based across all evidence, used by full code view
+- `batch_analyze()` — all-vs-all comparison currently working with threshold filtering and full evidence per pair (being reworked)
+- Routes `/compare`, `/compare-all`, `/similarity-score`, `/similarity-report` all functional
+- Frontend receives `format_report_as_json()` output and renders side-by-side view with match blocks and line highlighting
+- Backend passes real DB `submission_id` UUIDs as the `id` field into `batch_analyze()` — pairs in output already carry the correct UUIDs for the frontend to call `/compare`
+
+---
+
+## To-Do List
+
+---
+
+### 1. Identical File Detection — Flag 100% When Files Are Exactly the Same
+
+**Theory:**
+When two submissions are line-by-line identical, the engine should report 100% similarity — no gaps, no missing regions, the entire file flagged. The current problem is Winnowing: it deliberately subsamples fingerprints (selects roughly 1 in every W), so even for perfectly identical files, only a fraction of matching regions are captured. This creates gaps in the evidence — lines 1-30 flagged, gap at 31-50, lines 51-80 flagged — even though those gap lines are identical too. At very high similarity (>= 95%), the correct fix is to stop relying solely on fingerprint-matched regions and instead flag the entire file. We use `_compute_line_highlights()` (already exists in `evidence.py`) to highlight every meaningful line in both files. This function excludes comment-only lines and structural brace lines, so the frontend comment gray-scaling still works correctly.
+
+Additionally, `merge_gap` (how far apart two matched regions can be before they're kept separate) is currently hardcoded at 3. For high-similarity files this is far too small — it lets Winnowing's gaps through as separate blocks. Scaling `merge_gap` with the score closes these gaps before they even reach the identical-file stage.
+
+**Implementation — `engine/api.py`:**
+- After `scores = weighted_score(...)`, compute `merge_gap` dynamically:
+    - `weighted_final >= 0.90` -> `merge_gap = 20`
+    - `weighted_final >= 0.70` -> `merge_gap = 6`
+    - else -> `merge_gap = 3`
+- Apply to both `build_evidence()` calls (k=10 primary and k=5 supplementary)
+- After building evidence, if `weighted_final >= 0.95`:
+    - Import and call `_compute_line_highlights()` on full source for both submissions (line 1 to end)
+    - Overwrite `line_highlights_a/b` with full-file highlights, all marked "high"
+    - Add `"identicalSubmissions": True` to result dict
+
+---
+
+### 2. Obfuscation-Aware Scoring
+
+**Theory:**
+Obfuscation detection and similarity scoring currently run independently. The engine first scores based on normalized tokens (identifiers -> `ID`, literals -> `NUM`) so basic renaming is already neutralized at the scoring level. But structural obfuscation — loop type swaps, reordering, dead code insertion — can still dilute the fingerprint overlap score even when the core logic is clearly copied. When obfuscation flags are detected, the raw similarity score may understate the true level of copying. A smarter engine should factor detected obfuscation into the final score or at minimum surface a confidence-adjusted score alongside the raw one. This is complex to implement well and should be approached carefully — the goal is not to blindly inflate scores but to give the professor a more accurate signal when obfuscation is confirmed.
+
+**Status:** Design phase — discuss approach before implementing. No code changes yet.
+
+---
+
+### 3. Compare-All — Round Robin, All Pairs, Ranked by Score
+
+**Theory:**
+The current `batch_analyze()` runs the full heavy pipeline (evidence building, obfuscation detection) for every pair and then discards anything below a threshold. This is wrong for two reasons. First, it's slow — expensive work is done on pairs nobody asked about. Second, the threshold means a professor never sees pairs that scored 38% — those might still be suspicious in context. The correct design is two stages: Stage 1 is a fast scoring pass over all pairs (cheap — just fingerprint comparison math, no evidence building). Stage 2 is an on-demand deep dive into a specific pair when the professor selects it. `batch_analyze()` is Stage 1 only.
+
+The backend already passes real DB `submission_id` UUIDs as the `id` field, and the engine already returns them as `submission_a`/`submission_b` in pair output. The frontend uses these UUIDs to call `/compare` when a pair is selected. The link between Stage 1 and Stage 2 is already in place — no changes needed to submission ID handling.
+
+**Implementation — `engine/api.py` `batch_analyze()`:**
+- Remove `threshold` parameter entirely — all pairs are returned
+- Remove `build_evidence()` calls — scores only
+- Remove `detect_obfuscation()` calls — not needed for list view
+- Add group support: each submission dict may have optional `"group"` field; skip pairs where both share the same group value (follow existing `skip_same_student` pattern)
+- Simplify pair dict to: `{submission_a, submission_b, score, language_detected}`
+- Sort all pairs by score descending
+- Remove `flagged_pairs` and `threshold_used` from return dict
+
+**Implementation — `routes_engine.py` `/compare-all`:**
+- Remove `similarity_evidence` insert from batch loop — batch no longer returns evidence
+- Update score key: `pair["scores"]["weighted_final"]` -> `pair["score"]`
+- Update return shape to match simplified batch output
+
+---
+
+### 4. On-Demand Comparison View — Select Pair -> View Side-by-Side
+
+**Theory:**
+This is Stage 2 of the two-stage design. When the professor selects a pair from the compare-all list, the frontend calls the existing `/compare` endpoint with the two `submission_id` UUIDs. The engine runs the full pipeline — evidence building, obfuscation detection, line highlights — and returns the detailed report. This is exactly what the current compare flow already does. No new engine logic needed here — the work is in the frontend calling the right endpoint with the right IDs from the compare-all list.
+
+**Implementation:**
+- No engine changes needed
+- Frontend calls `POST /engine/assignments/{assignment_id}/compare` with `submission_a_id` and `submission_b_id` from the batch result
+- Returns full comparison report with match blocks, line highlights, obfuscation flags
+
+---
+
+## Files to Touch for This To-Do
+
+| Task                                      | File                                                               |
+|-------------------------------------------|--------------------------------------------------------------------|
+| Identical file detection + dynamic merge_gap | `engine/api.py`                                                 |
+| Compare-all rework                        | `engine/api.py` + `routes_engine.py`                               |
+| Obfuscation-aware scoring (when ready)    | `engine/api.py` + `engine/similarity/scores.py` + `engine/obfuscation/detect.py` |
+
+**Do NOT touch:** `lex.py`, `strip_comments.py`, `canonicalize.py`, `kgrams.py`, `ingest.py`, `report.py`, `report_html.py`, `__init__.py`, `cli/`
