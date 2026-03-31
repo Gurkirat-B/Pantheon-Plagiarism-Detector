@@ -113,7 +113,7 @@ def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
             """
             SELECT s.submission_id, s.user_id, u.email,
                    s.original_zip_name, s.submitted_at, s.status,
-                   a.s3_bucket, a.s3_key
+                   a.s3_bucket, a.s3_key, s.has_comparison
             FROM submissions s
             JOIN users u ON u.user_id = s.user_id
             LEFT JOIN artifacts a ON a.artifact_id = s.artifact_id
@@ -140,6 +140,7 @@ def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
                 "status": s[5],
                 "s3_bucket": s[6],
                 "s3_key": s[7],
+                "has_comparison": s[8],
             }
             for s in submissions
         ]
