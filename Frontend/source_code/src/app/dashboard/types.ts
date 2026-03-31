@@ -8,7 +8,7 @@ export type Assignment = {
 
 export type Course = {
   course_id: string;
-  code: number;
+  code: string;
   name: string;
   assignments?: Assignment[];
 };

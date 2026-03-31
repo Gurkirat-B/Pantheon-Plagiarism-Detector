@@ -154,6 +154,8 @@ export function DashboardClient({
     null,
   );
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+  const [editCourseError, setEditCourseError] = useState<string | null>(null);
+  const [isSavingCourse, setIsSavingCourse] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAssignment, setDeletingAssignment] = useState<{
     assignmentId: string;
@@ -408,31 +410,54 @@ export function DashboardClient({
     setEditCourseDialogOpen(true);
   };
 
-  const handleSaveEditCourse = () => {
+  const handleSaveEditCourse = async () => {
     if (!editingCourse) return;
-    setCourses((prev) =>
-      prev.map((c) =>
-        c.course_id !== editingCourse.courseId
-          ? c
-          : {
-              ...c,
-              code: Number(editingCourse.form.code),
-              name: editingCourse.form.name,
-            },
-      ),
-    );
-    if (selectedCourse?.course_id === editingCourse.courseId) {
-      setSelectedCourse((prev) =>
-        prev
-          ? {
-              ...prev,
-              code: Number(editingCourse.form.code),
-              name: editingCourse.form.name,
-            }
-          : prev,
+    setEditCourseError(null);
+    setIsSavingCourse(true);
+    try {
+      const res = await fetch(`/api/courses/${editingCourse.courseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: editingCourse.form.code,
+          name: editingCourse.form.name,
+        }),
+      });
+
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      if (!res.ok) throw new Error();
+
+      setCourses((prev) =>
+        prev.map((c) =>
+          c.course_id !== editingCourse.courseId
+            ? c
+            : {
+                ...c,
+                code: editingCourse.form.code,
+                name: editingCourse.form.name,
+              },
+        ),
       );
+      if (selectedCourse?.course_id === editingCourse.courseId) {
+        setSelectedCourse((prev) =>
+          prev
+            ? {
+                ...prev,
+                code: editingCourse.form.code,
+                name: editingCourse.form.name,
+              }
+            : prev,
+        );
+      }
+      setEditCourseDialogOpen(false);
+    } catch {
+      setEditCourseError("Failed to save changes. Please try again.");
+    } finally {
+      setIsSavingCourse(false);
     }
-    setEditCourseDialogOpen(false);
   };
 
   const handleOpenDeleteCourse = (course: Course) => {
@@ -860,7 +885,10 @@ export function DashboardClient({
       {/* ── Edit Course Dialog ──────────────────────────────────────────────── */}
       <Dialog
         open={editCourseDialogOpen}
-        onOpenChange={setEditCourseDialogOpen}
+        onOpenChange={(open) => {
+          setEditCourseDialogOpen(open);
+          if (!open) setEditCourseError(null);
+        }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -901,17 +929,21 @@ export function DashboardClient({
                 }
               />
             </div>
+            {editCourseError && (
+              <p className="text-sm text-destructive">{editCourseError}</p>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button
+            <LoadingButton
+              loading={isSavingCourse}
               onClick={handleSaveEditCourse}
               disabled={!editingCourse?.form.code || !editingCourse?.form.name}
             >
               Save changes
-            </Button>
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
