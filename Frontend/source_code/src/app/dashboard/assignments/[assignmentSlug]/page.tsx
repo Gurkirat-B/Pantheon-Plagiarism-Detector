@@ -12,10 +12,10 @@ export type Submission = {
   email: string;
   original_zip_name: string;
   submitted_at: string;
-  status: string;
   s3_bucket: string;
   s3_key: string;
-  similarity_score?: number | null; // present only after comparison
+  similarity_score?: number | null;
+  has_comparison: boolean;
 };
 
 export type AssignmentDetail = {
@@ -33,6 +33,39 @@ export type CourseInfo = {
   course_id: string;
   code: number;
   name: string;
+};
+
+// Matches the actual API response shape from GET /engine/similarity-report?submission_id=
+export type SimilarityReport = {
+  // Submission identifiers (camelCase as returned by API)
+  submissionA: string;
+  submissionB: string;
+  // Score is 0–100 scale
+  similarityScore: number;
+  similarityLevel: string;
+  language: string;
+  // Full report detail fields
+  matches: RawMatch[];
+  fullCodeA: Record<string, string>;
+  fullCodeB: Record<string, string>;
+  High: number;
+  Medium: number;
+  Low: number;
+  sections: number;
+  alterationTechniquesDetected: string[];
+};
+
+export type RawMatch = {
+  codeA: string;
+  codeB: string;
+  fileA: string;
+  fileB: string;
+  index: number;
+  linesA: string;
+  linesB: string;
+  severity: string;
+  lineHighlightsA: number[];
+  lineHighlightsB: number[];
 };
 
 // ─── Fetchers ─────────────────────────────────────────────────────────────────
@@ -74,6 +107,53 @@ async function getCourse(token: string, courseId: string): Promise<CourseInfo> {
   return res.json();
 }
 
+async function getReports(
+  token: string,
+  submissions: Submission[],
+): Promise<SimilarityReport[]> {
+  if (submissions.length === 0) return [];
+  const withComparisons = submissions.filter((s) => s.has_comparison);
+  if (withComparisons.length === 0) return [];
+
+  const batches = await Promise.all(
+    withComparisons.map(async (s) => {
+      const res = await fetch(
+        `${process.env.BACKEND_URL}/engine/similarity-report?submission_id=${s.submission_id}`,
+        {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        },
+      );
+      if (res.status === 401) redirect("/");
+      // 404 means no reports yet — treat as empty
+      if (res.status === 404 || !res.ok) return [] as SimilarityReport[];
+      const data = await res.json();
+      // API may return a single object or an array
+      return (Array.isArray(data) ? data : [data]) as SimilarityReport[];
+    }),
+  );
+
+  // Flatten and deduplicate by submissionA+submissionB pair
+  const seen = new Set<string>();
+  const all: SimilarityReport[] = [];
+  for (const batch of batches) {
+    if (!Array.isArray(batch)) continue;
+    for (const report of batch) {
+      // Normalise the key so A+B and B+A are treated as the same pair
+      const ids = [report.submissionA, report.submissionB].sort();
+      const key = ids.join("_");
+      if (!seen.has(key)) {
+        seen.add(key);
+        all.push(report);
+      }
+    }
+  }
+  return all;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -108,10 +188,19 @@ export default async function AssignmentPage({
   const { assignmentSlug } = await params;
   const token = await requireRole("professor");
 
-  // Fetch assignment first, then course in parallel
   const assignment = await getAssignment(token, assignmentSlug);
   if (assignment === null) notFound();
-  const course = await getCourse(token, assignment.course_id);
 
-  return <AssignmentView assignment={assignment} course={course} />;
+  const [course, initialReports] = await Promise.all([
+    getCourse(token, assignment.course_id),
+    getReports(token, assignment.submissions),
+  ]);
+
+  return (
+    <AssignmentView
+      assignment={assignment}
+      course={course}
+      initialReports={initialReports}
+    />
+  );
 }
