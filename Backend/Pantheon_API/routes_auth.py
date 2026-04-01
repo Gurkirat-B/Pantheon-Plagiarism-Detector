@@ -3,7 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
 from database import get_db_connection
-from auth import hash_password, verify_password, create_token, get_current_user
+from auth import (
+    hash_password,
+    verify_password,
+    create_token,
+    get_current_user,
+    issue_professor_session,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -71,6 +77,7 @@ def register(body: RegisterRequest):
 @router.post("/login")
 def login(body: LoginRequest):
     with get_db_connection() as conn:
+        professor_session_id = None
         #check if email exists
         row = conn.execute(
             "SELECT user_id, password_hash, role  FROM users WHERE email = %s",
@@ -84,6 +91,7 @@ def login(body: LoginRequest):
                 raise HTTPException(status_code=400, detail="Professor not registered")   
             if not verify_password(body.password, row[1]):
                 raise HTTPException(status_code=401, detail="Invalid password")
+            professor_session_id = issue_professor_session(conn, str(row[0]))
         # Student-only assignment existence check and add student to db if they don't exist (first-time login)
         elif body.role == "student":
             assignment = conn.execute(
@@ -103,7 +111,7 @@ def login(body: LoginRequest):
         else:
             raise HTTPException(status_code=400, detail="Invalid role specified")
 
-    token = create_token(str(row[0]), row[2])
+    token = create_token(str(row[0]), row[2], session_id=professor_session_id)
     return {"access_token": token, "token_type": "bearer"}
 
 @router.get("/role")
