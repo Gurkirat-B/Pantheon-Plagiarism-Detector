@@ -176,7 +176,26 @@ def compare_two_submissions(
             s3.download_file(a_info["bucket"], a_info["key"], str(a_zip))
             s3.download_file(b_info["bucket"], b_info["key"], str(b_zip))
 
-            raw_result = engine_compare(str(a_zip), str(b_zip))
+            # fetch boilerplate for this assignment (if any) and subtract it
+            template_path = None
+            with get_db_connection() as conn:
+                bp_row = conn.execute(
+                    """
+                    SELECT a.s3_bucket, a.s3_key
+                    FROM assignment_boilerplate ab
+                    JOIN artifacts a ON a.artifact_id = ab.artifact_id
+                    WHERE ab.assignment_id = %s
+                    ORDER BY ab.uploaded_at DESC
+                    LIMIT 1
+                    """,
+                    (str(assignment_id),),
+                ).fetchone()
+            if bp_row:
+                bp_zip = tmp_dir / "boilerplate.zip"
+                s3.download_file(bp_row[0], bp_row[1], str(bp_zip))
+                template_path = str(bp_zip)
+
+            raw_result = engine_compare(str(a_zip), str(b_zip), template_path=template_path)
             json_report = format_report_as_json(raw_result)
             score = json_report["similarityScore"] / 100.0
 
@@ -315,24 +334,18 @@ def compare_all(
                     assignment_id=str(assignment_id),
                 )
 
-        # 4) store a similarity_result + evidence row for each flagged pair
-        #    format_report_as_json() is called here so both compare and compare-all
-        #    store the same schema in similarity_evidence (same as the pairwise path)
+        # 4) store a similarity_result row for each pair (scores only).
+        #    No evidence is stored here — the full report (code, matches, highlights)
+        #    is generated on demand when the professor clicks into a specific pair
+        #    via POST /engine/assignments/{id}/compare.
         with get_db_connection() as conn:
             for pair in batch_result["pairs"]:
-                score = pair["score"]
-                json_report = format_report_as_json(pair)
-                result_row = conn.execute(
+                conn.execute(
                     """
                     INSERT INTO similarity_results (run_id, score, left_submission_id, right_submission_id)
                     VALUES (%s, %s, %s, %s)
-                    RETURNING result_id
                     """,
-                    (run_id, score, pair["submission_a"], pair["submission_b"]),
-                ).fetchone()
-                conn.execute(
-                    "INSERT INTO similarity_evidence (result_id, evidence_json) VALUES (%s, %s::jsonb)",
-                    (result_row[0], json.dumps(json_report)),
+                    (run_id, pair["score"], pair["submission_a"], pair["submission_b"]),
                 )
             conn.execute(
                 "UPDATE analysis_runs SET status = 'completed', completed_at = now() WHERE run_id = %s",
