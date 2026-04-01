@@ -252,8 +252,24 @@ def compare_all(
             (str(assignment_id),),
         ).fetchall()
 
+        # check for boilerplate upload for this assignment
+        boilerplate_row = conn.execute(
+            """
+            SELECT ab.boilerplate_id, a.s3_bucket, a.s3_key
+            FROM assignment_boilerplate ab
+            JOIN artifacts a ON a.artifact_id = ab.artifact_id
+            WHERE ab.assignment_id = %s
+            ORDER BY ab.uploaded_at DESC
+            LIMIT 1
+            """,
+            (str(assignment_id),),
+        ).fetchone()
+
     if len(rows) < 2:
         raise HTTPException(status_code=400, detail="At least 2 submissions with artifacts are required")
+
+    has_boilerplate = boilerplate_row is not None
+    parameters_json = json.dumps({"mode": "batch_all", "boilerplate": has_boilerplate})
 
     # 2) create analysis run and attach all submissions
     with get_db_connection() as conn:
@@ -263,7 +279,7 @@ def compare_all(
             VALUES (%s, %s, %s, %s::jsonb, 'running')
             RETURNING run_id
             """,
-            (str(assignment_id), str(user["user_id"]), ENGINE_VERSION, '{"mode":"batch_all"}'),
+            (str(assignment_id), str(user["user_id"]), ENGINE_VERSION, parameters_json),
         ).fetchone()
         run_id = run_row[0]
 
@@ -285,7 +301,21 @@ def compare_all(
                 s3.download_file(bucket, key, str(zip_path))
                 submissions_list.append({"id": sub_id, "path": str(zip_path), "student_id": student_id})
 
-            batch_result = engine_batch_analyze(submissions_list, assignment_id=str(assignment_id), threshold=0.0)
+            if has_boilerplate:
+                bp_zip = tmp_dir / "boilerplate.zip"
+                s3.download_file(boilerplate_row[1], boilerplate_row[2], str(bp_zip))
+                batch_result = engine_batch_analyze(
+                    submissions_list,
+                    assignment_id=str(assignment_id),
+                    threshold=0.0,
+                    template_path=str(bp_zip),
+                )
+            else:
+                batch_result = engine_batch_analyze(
+                    submissions_list,
+                    assignment_id=str(assignment_id),
+                    threshold=0.0,
+                )
 
         # 4) store a similarity_result + evidence row for each flagged pair
         #    format_report_as_json() is called here so both compare and compare-all
