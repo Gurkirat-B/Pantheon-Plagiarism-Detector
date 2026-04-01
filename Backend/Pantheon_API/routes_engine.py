@@ -309,44 +309,77 @@ def compare_all(
             )
         conn.commit()
 
-    # 3) download all ZIPs and run batch_analyze
+    # 3) download all ZIPs, run batch_analyze for ranking, then full compare per pair
     try:
         with tempfile.TemporaryDirectory() as td:
             tmp_dir = Path(td)
             submissions_list = []
+            sub_paths = {}
             for row in rows:
                 sub_id, student_id, bucket, key = str(row[0]), str(row[1]), row[2], row[3]
                 zip_path = tmp_dir / f"{sub_id}.zip"
                 s3.download_file(bucket, key, str(zip_path))
                 submissions_list.append({"id": sub_id, "path": str(zip_path), "student_id": student_id})
+                sub_paths[sub_id] = str(zip_path)
 
+            template_path = None
             if has_boilerplate:
                 bp_zip = tmp_dir / "boilerplate.zip"
                 s3.download_file(boilerplate_row[1], boilerplate_row[2], str(bp_zip))
-                batch_result = engine_batch_analyze(
-                    submissions_list,
-                    assignment_id=str(assignment_id),
-                    template_path=str(bp_zip),
-                )
-            else:
-                batch_result = engine_batch_analyze(
-                    submissions_list,
-                    assignment_id=str(assignment_id),
-                )
+                template_path = str(bp_zip)
 
-        # 4) store a similarity_result row for each pair (scores only).
-        #    No evidence is stored here — the full report (code, matches, highlights)
-        #    is generated on demand when the professor clicks into a specific pair
-        #    via POST /engine/assignments/{id}/compare.
+            batch_result = engine_batch_analyze(
+                submissions_list,
+                assignment_id=str(assignment_id),
+                template_path=template_path,
+            )
+
+            # Run full engine_compare in parallel for every pair so that evidence,
+            # full source code and match blocks are stored in the DB.
+            # ZIPs are already on disk — no re-download needed.
+            def _full_compare(pair):
+                a_id = pair["submission_a"]
+                b_id = pair["submission_b"]
+                try:
+                    raw = engine_compare(
+                        sub_paths[a_id], sub_paths[b_id],
+                        submission_a_id=a_id,
+                        submission_b_id=b_id,
+                        assignment_id=str(assignment_id),
+                        template_path=template_path,
+                    )
+                    return (a_id, b_id), format_report_as_json(raw)
+                except Exception:
+                    return (a_id, b_id), None
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
+            pair_reports = {}
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(_full_compare, p): p for p in batch_result["pairs"]}
+                for fut in _as_completed(futures):
+                    key, report = fut.result()
+                    if report:
+                        pair_reports[key] = report
+
+        # 4) store similarity_result + evidence for every pair
         with get_db_connection() as conn:
             for pair in batch_result["pairs"]:
-                conn.execute(
+                a_id = pair["submission_a"]
+                b_id = pair["submission_b"]
+                result_row = conn.execute(
                     """
                     INSERT INTO similarity_results (run_id, score, left_submission_id, right_submission_id)
                     VALUES (%s, %s, %s, %s)
+                    RETURNING result_id
                     """,
-                    (run_id, pair["score"], pair["submission_a"], pair["submission_b"]),
-                )
+                    (run_id, pair["score"], a_id, b_id),
+                ).fetchone()
+                report = pair_reports.get((a_id, b_id))
+                if report:
+                    conn.execute(
+                        "INSERT INTO similarity_evidence (result_id, evidence_json) VALUES (%s, %s::jsonb)",
+                        (result_row[0], json.dumps(report)),
+                    )
             conn.execute(
                 "UPDATE analysis_runs SET status = 'completed', completed_at = now() WHERE run_id = %s",
                 (run_id,),
