@@ -357,7 +357,7 @@ def compare_repo(
         # Fetch all repo uploads for the repository linked to this assignment
         repo_rows = conn.execute(
             """
-            SELECT ru.upload_id, ru.filename, a.s3_bucket, a.s3_key, a.artifact_id
+            SELECT ru.upload_id, ru.filename, a.s3_bucket, a.s3_key
             FROM repository_uploads ru
             JOIN artifacts a ON a.artifact_id = ru.artifact_id
             JOIN repositories r ON r.repository_id = ru.repository_id
@@ -419,8 +419,8 @@ def compare_repo(
                 sub_paths[sub_id] = zip_path
 
             for repo_row in repo_rows:
-                upload_id, repo_bucket, repo_key, artifact_id = (
-                    str(repo_row[0]), repo_row[2], repo_row[3], str(repo_row[4])
+                upload_id, repo_bucket, repo_key = (
+                    str(repo_row[0]), repo_row[2], repo_row[3]
                 )
                 repo_zip = tmp_dir / f"repo_{upload_id}.zip"
                 s3.download_file(repo_bucket, repo_key, str(repo_zip))
@@ -441,7 +441,6 @@ def compare_repo(
 
                     pairs.append({
                         "upload_id": upload_id,
-                        "artifact_id": artifact_id,
                         "submission_id": sub_id,
                         "score": score,
                         "json_report": json_report,
@@ -452,12 +451,12 @@ def compare_repo(
                 result_row = conn.execute(
                     """
                     INSERT INTO similarity_results (
-                        run_id, score, left_artifact_id, right_submission_id, prof_comparison
+                        run_id, score, left_upload_id, right_submission_id, prof_comparison
                     )
                     VALUES (%s, %s, %s, %s, TRUE)
                     RETURNING result_id
                     """,
-                    (run_id, pair["score"], pair["artifact_id"], pair["submission_id"]),
+                    (run_id, pair["score"], pair["upload_id"], pair["submission_id"]),
                 ).fetchone()
                 conn.execute(
                     """
