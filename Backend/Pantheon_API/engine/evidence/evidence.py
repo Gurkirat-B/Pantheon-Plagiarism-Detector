@@ -236,6 +236,24 @@ def build_evidence(
         if file_b is None:
             file_b, orig_b1, orig_b2 = "canonical", b1, b2
 
+        # Skip cross-language matches — only compare files of the same language family.
+        # Java vs C, Java vs C++ etc. produce meaningless fingerprint matches
+        # and must be excluded. Group extensions into families so .cpp/.cc/.cxx
+        # are all treated as C++ and can match each other.
+        _lang_family = {
+            ".java":  "java",
+            ".py":    "python",
+            ".c":     "c",
+            ".h":     "c",
+            ".cpp":   "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp",
+            ".js":    "js",
+            ".ts":    "ts",
+        }
+        ext_a = Path(file_a).suffix.lower()
+        ext_b = Path(file_b).suffix.lower()
+        if _lang_family.get(ext_a) != _lang_family.get(ext_b):
+            continue
+
         la1 = orig_a1 or a1
         la2 = orig_a2 or a2
         lb1 = orig_b1 or b1

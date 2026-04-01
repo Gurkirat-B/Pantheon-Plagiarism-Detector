@@ -14,6 +14,10 @@ _FLAG_LABELS = {
     "ternary_to_ifelse":    "Ternary expression expanded into an if-else block",
     "exception_wrapping":   "Code wrapped inside try-catch blocks",
     "for_each_to_indexed":  "For-each loop converted to an index-based for loop",
+    "compound_op_expansion": "Compound operators expanded (i++ or a += b rewritten as explicit assignments)",
+    "method_decomposition":  "Method decomposition (one method split into multiple smaller helpers)",
+    "condition_negation":    "Condition inversion or De Morgan transformation (if (a > b) rewritten as if (!(a <= b)))",
+    "intermediate_variable": "Intermediate variables injected to obscure direct expressions",
 }
 
 _RISK_COLORS = {
@@ -180,16 +184,14 @@ def format_report_as_json(result) -> dict:
         lines_a = block.get("lines_a", [1, 1])
         lines_b = block.get("lines_b", [1, 1])
         matches.append({
-            "index":            i,
-            "severity":         block.get("match_strength", "low").upper(),
-            "fileA":            block.get("file_a", ""),
-            "linesA":           f"{lines_a[0]} - {lines_a[1]}",
-            "lineHighlightsA":  block.get("line_highlights_a", []),
-            "fileB":            block.get("file_b", ""),
-            "linesB":           f"{lines_b[0]} - {lines_b[1]}",
-            "lineHighlightsB":  block.get("line_highlights_b", []),
-            "codeA":            block.get("code_a", ""),
-            "codeB":            block.get("code_b", ""),
+            "index":    i,
+            "severity": block.get("match_strength", "low").upper(),
+            "fileA":    block.get("file_a", ""),
+            "linesA":   [lines_a[0], lines_a[1]],
+            "fileB":    block.get("file_b", ""),
+            "linesB":   [lines_b[0], lines_b[1]],
+            "codeA":    block.get("code_a", ""),
+            "codeB":    block.get("code_b", ""),
         })
 
     return {
@@ -198,12 +200,19 @@ def format_report_as_json(result) -> dict:
         "language":                     (result.get("language_detected") or "unknown").upper(),
         "similarityScore":              round(final * 100, 1),
         "similarityLevel":              risk,
+        "identicalSubmissions":         result.get("identicalSubmissions", False),
         "alterationTechniquesDetected": [_FLAG_LABELS.get(f, f) for f in flags],
         "sections":                     len(evidence),
         "High":                         high,
         "Medium":                       medium,
         "Low":                          low,
         "matches":                      matches,
-        "fullCodeA":                    result.get("original_sources_a", {}),
-        "fullCodeB":                    result.get("original_sources_b", {}),
+        # Single concatenated source string — all files from the ZIP joined in
+        # sorted order. Evidence block linesA/B are line numbers within this view.
+        "fullCodeA":                    result.get("full_source_a", ""),
+        "fullCodeB":                    result.get("full_source_b", ""),
+        # {filename: line_offset} — where each file starts in the concatenated view.
+        # Frontend uses this to show "filename — lines X to Y" as the block header.
+        "fileOffsetsA":                 result.get("file_offsets_a", {}),
+        "fileOffsetsB":                 result.get("file_offsets_b", {}),
     }

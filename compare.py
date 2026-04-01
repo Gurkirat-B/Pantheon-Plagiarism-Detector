@@ -17,7 +17,6 @@ def resolve_file(name):
 # ── Batch mode ────────────────────────────────────────────────────────────────
 if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
     folder = sys.argv[2]
-    threshold = float(sys.argv[3]) if len(sys.argv) >= 4 else 0.4
 
     if not os.path.isdir(folder):
         print(f"ERROR: '{folder}' is not a directory")
@@ -38,7 +37,7 @@ if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
 
     print(f"Running round robin on {len(submissions)} submissions ({len(submissions)*(len(submissions)-1)//2} pairs)...\n")
 
-    results = batch_analyze(submissions, threshold=threshold)
+    results = batch_analyze(submissions)
 
     pairs = results.get("pairs", [])
     if not pairs:
@@ -48,8 +47,7 @@ if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
     print(f"{'#':<4} {'Score':>6}  {'Level':<10}  {'File A':<35} {'File B'}")
     print("-" * 90)
     for i, pair in enumerate(pairs, 1):
-        score = pair.get("scores", {}).get("weighted_final", 0) * 100
-        flags = pair.get("obfuscation_flags", [])
+        score = pair.get("score", 0) * 100
         if score >= 90:
             level = "CRITICAL"
         elif score >= 70:
@@ -60,22 +58,20 @@ if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
             level = "LOW"
         a = pair.get("submission_a", "")
         b = pair.get("submission_b", "")
-        obf = f"  [{', '.join(flags)}]" if flags else ""
-        print(f"{i:<4} {score:>5.1f}%  {level:<10}  {a:<35} {b}{obf}")
+        print(f"{i:<4} {score:>5.1f}%  {level:<10}  {a:<35} {b}")
 
-    print(f"\nTotal suspicious pairs: {len(pairs)} / {results.get('total_pairs', 0)}")
+    print(f"\nTotal pairs compared: {len(pairs)} / {results.get('total_pairs', 0)}")
     sys.exit(0)
 
 # ── Pairwise mode ─────────────────────────────────────────────────────────────
 if len(sys.argv) < 3:
     print("Usage:")
     print("  python3 compare.py <file_a> <file_b>")
-    print("  python3 compare.py --batch <folder> [threshold]")
+    print("  python3 compare.py --batch <folder>")
     print()
     print("Examples:")
     print("  python3 compare.py BST_original.java BST_copied.java")
     print("  python3 compare.py --batch Engine/samples/")
-    print("  python3 compare.py --batch Engine/samples/ 0.5")
     sys.exit(1)
 
 a = resolve_file(sys.argv[1])

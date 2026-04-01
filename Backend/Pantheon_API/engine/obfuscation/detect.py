@@ -13,6 +13,10 @@ Detected flags:
   7.  ternary_to_ifelse     — one uses ? : operator, other uses if-else for same logic
   8.  exception_wrapping    — try-catch blocks added around existing code
   9.  for_each_to_indexed   — for-each loop converted to indexed for loop
+  10. compound_op_expansion — i++ / a += b rewritten as i = i + 1 / a = a + b
+  11. method_decomposition  — one big method split into multiple smaller helpers
+  12. condition_negation    — if (a > b) rewritten as if (!(a <= b)) / De Morgan
+  13. intermediate_variable — temp variables injected to obscure direct expressions
 """
 
 from typing import Dict, List
@@ -168,6 +172,67 @@ def detect_obfuscation(
         if (a_enhanced == 0 and b_enhanced > 0) or (a_enhanced > 0 and b_enhanced == 0):
             flags.append("for_each_to_indexed")
 
+    # ── 10. Compound Operator Expansion ──────────────────────────────
+    # Reasoning: i++ / a += b are compact idioms. Expanding them to
+    # i = i + 1 / a = a + b changes the token sequence significantly
+    # while keeping the logic identical. If one submission uses many
+    # compound ops and the other uses almost none at similar similarity,
+    # the student expanded them to obscure copying.
+    _COMPOUND_OPS = {"+=", "-=", "*=", "/=", "%=", "++", "--", "&=", "|=", "^=", "<<=", ">>="}
+    a_compound = sum(1 for t in tok_a_raw if t.text in _COMPOUND_OPS)
+    b_compound = sum(1 for t in tok_b_raw if t.text in _COMPOUND_OPS)
+    if norm_score > 0.35:
+        max_c = max(a_compound, b_compound)
+        min_c = min(a_compound, b_compound)
+        # One side has 4+ compound ops, the other has less than 30% of that count
+        if max_c >= 4 and min_c <= max_c * 0.30:
+            flags.append("compound_op_expansion")
+
+    # ── 11. Method Decomposition ──────────────────────────────────────
+    # Reasoning: splitting one long method into several smaller helpers
+    # fragments k-gram chains and inflates the method count. A '{' that
+    # immediately follows ')' signals a function/method body opening
+    # (as opposed to if/for/while which also have '{' but aren't method
+    # splits). A large disparity in method-like brace count at high
+    # similarity indicates deliberate decomposition.
+    a_methods = _count_method_braces(tok_a_raw)
+    b_methods = _count_method_braces(tok_b_raw)
+    if norm_score > 0.40:
+        max_m = max(a_methods, b_methods)
+        min_m = max(min(a_methods, b_methods), 1)
+        if max_m / min_m > 1.8 and max_m >= 4:
+            flags.append("method_decomposition")
+
+    # ── 12. Condition Negation / De Morgan ────────────────────────────
+    # Reasoning: `if (a > b)` rewritten as `if (!(a <= b))` or
+    # `!(x && y)` rewritten as `(!x || !y)` adds '!' tokens without
+    # changing the logic. A large asymmetry in '!' counts at significant
+    # similarity signals this transformation.
+    a_negate = sum(1 for t in tok_a_raw if t.text == "!")
+    b_negate = sum(1 for t in tok_b_raw if t.text == "!")
+    if norm_score > 0.35:
+        max_n = max(a_negate, b_negate)
+        min_n = min(a_negate, b_negate)
+        # One has 3+ negations, the other has none or less than 40% of that
+        if max_n >= 3 and (min_n == 0 or max_n / min_n > 2.5):
+            flags.append("condition_negation")
+
+    # ── 13. Intermediate Variable Injection ───────────────────────────
+    # Reasoning: `return a + b` → `int temp = a + b; return temp` inserts
+    # extra assignment statements. The tokenizer emits '=' only for pure
+    # assignments (multi-char operators like +=, == are separate tokens),
+    # so counting '=' gives a clean assignment density. A significantly
+    # higher density in one submission at similar structural similarity
+    # indicates injected temp variables.
+    a_assigns = sum(1 for t in tok_a_raw if t.text == "=")
+    b_assigns = sum(1 for t in tok_b_raw if t.text == "=")
+    if norm_score > 0.35:
+        max_a = max(a_assigns, b_assigns)
+        min_a = max(min(a_assigns, b_assigns), 1)
+        diff  = abs(a_assigns - b_assigns)
+        if diff >= 5 and max_a / min_a > 2.0:
+            flags.append("intermediate_variable")
+
     return flags
 
 
@@ -196,6 +261,24 @@ def _loops_swapped(a: dict, b: dict) -> bool:
     a_for_ratio = a["for"] / a_total
     b_for_ratio = b["for"] / b_total
     return abs(a_for_ratio - b_for_ratio) > 0.5
+
+
+def _count_method_braces(tokens: List[Token]) -> int:
+    """
+    Count '{' tokens that are preceded by ')' within 5 tokens (likely method/
+    function body openings). Control-flow constructs (if/for/while/do/try) also
+    use this pattern but we're looking at the ratio between submissions, so
+    systematic differences still indicate decomposition. Checks up to 5 tokens
+    back to handle cases like `void foo() throws Ex {`.
+    """
+    count = 0
+    for i, tok in enumerate(tokens):
+        if tok.text == "{":
+            for j in range(max(0, i - 5), i):
+                if tokens[j].text == ")":
+                    count += 1
+                    break
+    return count
 
 
 def _count_enhanced_for(tokens: List[Token]) -> int:

@@ -160,6 +160,28 @@ _ACCESS_KEYWORDS = {
     "pub", "mut",  # Rust
 }
 
+# Primitive and common types — normalize to "TYPE" so int→long, float→double
+# etc. don't break k-gram matches. Only affects tok_norm.
+_TYPE_KEYWORDS = {
+    # Java / C / C++ primitives
+    "int", "long", "short", "byte", "float", "double", "char", "boolean",
+    "void", "unsigned", "signed",
+    # Java collections / common types students swap
+    "ArrayList", "LinkedList", "HashMap", "HashSet", "TreeMap", "TreeSet",
+    "LinkedHashMap", "LinkedHashSet", "ArrayDeque", "PriorityQueue",
+    "List", "Map", "Set", "Queue", "Deque", "Collection", "Iterator",
+    # Java exception types
+    "Exception", "RuntimeException", "IllegalArgumentException",
+    "NullPointerException", "IndexOutOfBoundsException",
+    "IllegalStateException", "UnsupportedOperationException",
+    "IOException", "ArithmeticException",
+    # C++ types students swap
+    "vector", "list", "map", "set", "unordered_map", "unordered_set",
+    "deque", "queue", "stack", "pair", "string", "wstring",
+    # Python common types
+    "int", "float", "str", "bool", "list", "dict", "set", "tuple",
+}
+
 
 def tokenize(text: str,
              lang: str = "mixed",
@@ -298,7 +320,10 @@ def tokenize(text: str,
                 else:
                     emit(word)
             else:
-                emit("ID" if normalize_ids else word)
+                if normalize_ids and word in _TYPE_KEYWORDS:
+                    emit("TYPE")
+                else:
+                    emit("ID" if normalize_ids else word)
             i = m.end()
             continue
 

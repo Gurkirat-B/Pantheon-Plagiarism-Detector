@@ -28,11 +28,14 @@ _java_annotation_boilerplate_re = re.compile(
     re.MULTILINE,
 )
 
-# System.out.* and System.err.* output calls — every Java student uses these;
-# they don't reflect algorithm logic and create false-positive k-gram matches.
-# Matches single-line calls: System.out.println(...); / System.err.print(...); etc.
+# System.out.* and System.err.* output calls — only blank trivially generic ones
+# (empty calls or bare string literals with no variable content).
+# Calls with actual content e.g. System.out.println("Error at " + i) are kept
+# so identical non-trivial print statements are correctly flagged as suspicious.
+# Blanked: System.out.println(); / System.out.println("Hello"); / System.err.print("");
+# Kept:    System.out.println("Error: " + msg); / System.out.println(result);
 _java_sysout_re = re.compile(
-    r"^[ \t]*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(.*\);[ \t]*$",
+    r"^[ \t]*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(\s*(?:\"[^\"]*\"|\'[^\']*\'|)\s*\);[ \t]*$",
     re.MULTILINE,
 )
 
@@ -116,18 +119,28 @@ _c_define_guard_re = re.compile(
     re.MULTILINE,
 )
 
-# printf/scanf/puts/gets and related C stdio output/input calls (single-line).
-# These are universal output boilerplate — not algorithm logic.
+# C stdio: only blank trivially generic calls (empty, bare string literal, no variables).
+# scanf/input calls are always blanked — they are structural boilerplate.
+# printf with content e.g. printf("val: %d", x) is kept so identical output
+# statements across submissions are correctly flagged as suspicious.
 _c_stdio_call_re = re.compile(
-    r"^[ \t]*(?:printf|fprintf|sprintf|snprintf|scanf|fscanf|sscanf|"
-    r"puts|fputs|gets|fgets|perror|putchar|putc|getchar|getc)\s*\(.*\);[ \t]*$",
+    r"^[ \t]*(?:scanf|fscanf|sscanf|gets|fgets|getchar|getc)\s*\(.*\);[ \t]*$"
+    r"|^[ \t]*(?:printf|fprintf|sprintf|snprintf|puts|fputs|perror|putchar|putc)"
+    r"\s*\(\s*(?:\"[^\"]*\"|\'[^\']*\'|stderr\s*,\s*\"[^\"]*\"|stdout\s*,\s*\"[^\"]*\"|)\s*\);[ \t]*$",
     re.MULTILINE,
 )
 
-# C++ stream I/O: cout << ... ; / cin >> ... ; / cerr << ... ;
-# Using std:: prefix or bare name. Single-line statements.
+# C++ stream I/O: always blank cin/input streams (structural boilerplate).
+# For cout/cerr: only blank trivially generic output (bare string literals or endl only).
+# cout with variables e.g. cout << result << endl; is kept so identical output
+# statements are flagged as suspicious.
+_cpp_stream_cin_re = re.compile(
+    r"^[ \t]*(?:std\s*::\s*)?(?:cin|clog)\s*>>.*;[ \t]*$",
+    re.MULTILINE,
+)
 _cpp_stream_re = re.compile(
-    r"^[ \t]*(?:std\s*::\s*)?(?:cout|cin|cerr|clog)\s*(?:<<|>>).*;[ \t]*$",
+    r"^[ \t]*(?:std\s*::\s*)?(?:cout|cerr)\s*<<\s*"
+    r"(?:(?:\"[^\"]*\"|\'[^\']*\'|std\s*::\s*endl|endl|\"\\n\"|\s*)\s*(?:<<\s*(?:\"[^\"]*\"|\'[^\']*\'|std\s*::\s*endl|endl|\"\\n\"|\s*))*)\s*;[ \t]*$",
     re.MULTILINE,
 )
 
@@ -292,6 +305,7 @@ def blank_output_boilerplate(text: str, lang: str) -> str:
         text = _java_this_assign_re.sub("", text)
     elif lang in ("c", "cpp", "c_or_cpp"):
         text = _c_stdio_call_re.sub("", text)
+        text = _cpp_stream_cin_re.sub("", text)
         text = _cpp_stream_re.sub("", text)
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
@@ -302,6 +316,7 @@ def blank_output_boilerplate(text: str, lang: str) -> str:
         text = _java_null_guard_re.sub("", text)
         text = _java_this_assign_re.sub("", text)
         text = _c_stdio_call_re.sub("", text)
+        text = _cpp_stream_cin_re.sub("", text)
         text = _cpp_stream_re.sub("", text)
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
