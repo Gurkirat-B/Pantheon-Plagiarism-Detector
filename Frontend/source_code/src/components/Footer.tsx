@@ -106,7 +106,7 @@ export default function Footer() {
             <ul className="mt-5 space-y-3.5">
               <li>
                 <Link
-                  href="#"
+                  href="/customer-support"
                   className="text-sm text-slate-600 transition-colors duration-150 hover:text-[#d40f0d]"
                 >
                   Customer Support
