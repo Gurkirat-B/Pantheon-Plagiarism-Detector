@@ -30,7 +30,7 @@ CREATE TABLE users (
   name        TEXT NOT NULL,
   email       TEXT NOT NULL UNIQUE,
   role        user_role NOT NULL,
-  active_session_id TEXT,
+  -- active_session_id TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -128,7 +128,39 @@ CREATE TABLE submissions (
 -- );
 
 -- ============================================================
--- 5) Repository management (professor personal repos + assignment repos)
+-- 5) Assignment boilerplate/template uploads
+-- ============================================================
+-- New table storing boilerplate uploads.
+-- `uploaded_by` is nullable so ON DELETE SET NULL remains valid for existing rows.
+
+CREATE TABLE assignment_boilerplate (
+  boilerplate_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id  UUID NOT NULL REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+  artifact_id    UUID NOT NULL REFERENCES artifacts(artifact_id) ON DELETE RESTRICT,
+  name           TEXT NOT NULL,
+  uploaded_by    UUID REFERENCES users(user_id) ON DELETE SET NULL,
+  uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (assignment_id, name)
+);
+
+CREATE INDEX idx_assignment_boilerplate_assignment_id
+  ON assignment_boilerplate(assignment_id);
+
+-- Optional ALTER TABLE snippet for existing deployments:
+-- CREATE TABLE assignment_boilerplate (
+--   boilerplate_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   assignment_id  UUID NOT NULL REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+--   artifact_id    UUID NOT NULL REFERENCES artifacts(artifact_id) ON DELETE RESTRICT,
+--   name           TEXT NOT NULL,
+--   uploaded_by    UUID REFERENCES users(user_id) ON DELETE SET NULL,
+--   uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+--   UNIQUE (assignment_id, name)
+-- );
+-- CREATE INDEX idx_assignment_boilerplate_assignment_id
+--   ON assignment_boilerplate(assignment_id);
+
+-- ============================================================
+-- 6) Repository management (professor personal repos + assignment repos)
 -- ============================================================
 -- Repositories are logical containers; each upload is an artifact in S3.
 
@@ -153,7 +185,7 @@ CREATE TABLE repository_uploads (
 CREATE INDEX idx_repository_uploads_repository_id ON repository_uploads(repository_id);
 
 -- ============================================================
--- 6) Analysis runs + results (metadata only; engine reads artifacts from S3)
+-- 7) Analysis runs + results (metadata only; engine reads artifacts from S3)
 -- ============================================================
 
 CREATE TABLE analysis_runs (
