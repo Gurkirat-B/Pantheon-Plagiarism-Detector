@@ -183,6 +183,91 @@ async def upload_to_repo(
         "message": "Repository uploaded successfully"
     }
 
+@router.post("/boilerplate/{assignment_id}")
+async def upload_boilerplate(
+    assignment_id: UUID,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    if user["role"] != "professor":
+        raise HTTPException(status_code=403, detail="Only professors can upload boilerplate")
+
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Only .zip files are allowed")
+
+    file_bytes = await file.read()
+
+    try:
+        zipfile.ZipFile(io.BytesIO(file_bytes)).close()
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid .zip archive")
+
+    with get_db_connection() as conn:
+        repo = conn.execute(
+            """
+            SELECT repository_id FROM repositories
+            WHERE assignment_id = %s AND owner_id = %s
+            """,
+            (str(assignment_id), str(user["user_id"])),
+        ).fetchone()
+
+    if not repo:
+        raise HTTPException(status_code=404, detail="No repository found for this assignment")
+
+    repository_id = repo[0]
+    filename = file.filename
+    s3_key = f"repositories/{repository_id}/{filename}"
+
+    try:
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=s3_key,
+            Body=file_bytes,
+            ContentType="application/zip",
+        )
+    except ClientError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to upload boilerplate to S3: {e}")
+
+    with get_db_connection() as conn:
+        artifact_row = conn.execute(
+            """
+            INSERT INTO artifacts (s3_bucket, s3_key, original_name, content_type, size_bytes)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (s3_bucket, s3_key) DO UPDATE
+              SET original_name = EXCLUDED.original_name,
+                  size_bytes    = EXCLUDED.size_bytes,
+                  content_type  = EXCLUDED.content_type
+            RETURNING artifact_id
+            """,
+            (S3_BUCKET, s3_key, filename, "application/zip", len(file_bytes)),
+        ).fetchone()
+
+        boilerplate_row = conn.execute(
+            """
+            INSERT INTO assignment_boilerplate (assignment_id, artifact_id, name, uploaded_by)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (assignment_id, name) DO UPDATE
+              SET artifact_id = EXCLUDED.artifact_id,
+                  uploaded_by = EXCLUDED.uploaded_by,
+                  uploaded_at = now()
+            RETURNING boilerplate_id, uploaded_at
+            """,
+            (str(assignment_id), str(artifact_row[0]), filename, str(user["user_id"])),
+        ).fetchone()
+
+        conn.commit()
+
+    return {
+        "boilerplate_id": str(boilerplate_row[0]),
+        "assignment_id": str(assignment_id),
+        "name": filename,
+        "s3_key": s3_key,
+        "size_bytes": len(file_bytes),
+        "uploaded_at": boilerplate_row[1].isoformat(),
+        "message": "Boilerplate uploaded successfully"
+    }
+
+
 @router.post("/{assignment_id}")
 async def upload_submission(
     assignment_id: UUID,
