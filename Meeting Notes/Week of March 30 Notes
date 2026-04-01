@@ -6,7 +6,7 @@ General
 
 
 - Engine
-  - Fine-tune the similarity metrics
+  - Fine-tune the similarity metrics 
   - Removing cross-code comparisons
   - Work on the template provided by prof strip that 
   - work on multiple submissions within the .ZIP file DONE
@@ -15,25 +15,22 @@ General
 
 
 Backend
-  - Boiler plate code
-  - Proffessor repo comparissons
-  - Cleaning
+  - Boiler plate code 
+  - Proffessor repo comparissons DONE
+  - Cleaning 
   - Security 
-  - Adding course change API
-  - Add logic to not add an assignment for an old date 
-  - For the detail button in the assignment dashboard, it should show the assignment code fully for that student
-  - Comparissons for previous year submissions 
-  - Add api for course change names 
-  - The instructor to compare past assignments 
-  - Comparissons for previous year submissions 
-  - Remove assignments/course/{course_id} api 
-  - fix the language selector so it works
+  - Adding course change API DONE
+  - Add logic to not add an assignment for an old date DONE
+  - Comparissons for previous year submissions DONE
+  - Add api for course change names DONE
+  - Remove assignments/course/{course_id} api DONE
+  - fix the language selector so it works DONE
 
 
 UI
-  - Compare all screen
-  - Cleaning
-  - Testing all links
+  - Compare all screens DONE
+  - Cleaning 
+  - Testing all links DONE
   - Working on line colour choices
   - Add a button to switch the view to ascending order LOW PRIORITY
 
