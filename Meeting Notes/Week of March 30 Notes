@@ -25,6 +25,7 @@ Backend
   - Add api for course change names DONE
   - Remove assignments/course/{course_id} api DONE
   - fix the language selector so it works DONE
+  - Add api to get course detail like course name, assignment, and prof name
 
 
 UI
