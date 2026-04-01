@@ -120,16 +120,16 @@ function getScoreSeverity(score: number): {
   if (score >= 80)
     return {
       label: "HIGH",
-      className: "border-red-200 bg-red-50 text-red-700",
+      className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
     };
   if (score >= 50)
     return {
       label: "MEDIUM",
-      className: "border-yellow-200 bg-yellow-50 text-yellow-700",
+      className: "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
     };
   return {
     label: "LOW",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
   };
 }
 
@@ -569,7 +569,7 @@ function ReportListDialog({
                 <button
                   key={reportKey}
                   onClick={() => onOpenReport(sr)}
-                  className={`w-full rounded-lg border p-4 text-left transition-colors hover:opacity-80 ${sev.className}`}
+                  className={`w-full rounded-lg border p-4 text-left transition-colors ${sev.className}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
@@ -676,9 +676,11 @@ function CompareAllSuccessDialog({
 
 function SubmissionRow({
   submission,
+  hasReports,
   onDetail,
 }: {
   submission: Submission;
+  hasReports: boolean;
   onDetail: () => void;
 }) {
   return (
@@ -701,6 +703,21 @@ function SubmissionRow({
           >
             {submission.status}
           </Badge>
+          {hasReports ? (
+            <Badge
+              variant="outline"
+              className="text-xs border-blue-200 bg-blue-50 text-blue-700"
+            >
+              Compared
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="text-xs border-slate-200 bg-slate-50 text-slate-400"
+            >
+              Not compared
+            </Badge>
+          )}
         </div>
         <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
@@ -805,6 +822,10 @@ export function AssignmentView({
     setDetailSubmission(null);
     setDialogOpen(true);
   };
+
+  const submissionsWithReports = new Set(
+    reports.flatMap((r) => [r.submissionA, r.submissionB]),
+  );
 
   // Stats: similarityScore is already 0–100
   const avgScore =
@@ -923,6 +944,7 @@ export function AssignmentView({
               <SubmissionRow
                 key={submission.submission_id}
                 submission={submission}
+                hasReports={submissionsWithReports.has(submission.submission_id)}
                 onDetail={() => setDetailSubmission(submission)}
               />
             ))
