@@ -320,7 +320,7 @@ def compare_all(
         #    store the same schema in similarity_evidence (same as the pairwise path)
         with get_db_connection() as conn:
             for pair in batch_result["pairs"]:
-                score = pair["scores"]["weighted_final"]
+                score = pair["score"]
                 json_report = format_report_as_json(pair)
                 result_row = conn.execute(
                     """
@@ -354,7 +354,7 @@ def compare_all(
                 {
                     "submission_a": p["submission_a"],
                     "submission_b": p["submission_b"],
-                    "score": p["scores"]["weighted_final"],
+                    "score": p["score"],
                     "language_detected": p["language_detected"],
                 }
                 for p in batch_result["pairs"]
