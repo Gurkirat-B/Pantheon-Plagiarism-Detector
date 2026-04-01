@@ -36,6 +36,7 @@ from engine.exceptions import EngineError
 from engine.ingest.ingest import ingest_to_dir
 from engine.preprocess.canonicalize import canonicalize
 from engine.preprocess.stdlib_filter import blank_output_boilerplate
+from engine.preprocess.strip_comments import strip_comments
 from engine.tokenize.lex import tokenize
 from engine.fingerprint.kgrams import winnow, build_fingerprints
 from engine.similarity.scores import weighted_score
@@ -216,11 +217,17 @@ def compare(
         original_sources_a = _load_original_sources(dir_a, proc_a["canon"].source_map)
         original_sources_b = _load_original_sources(dir_b, proc_b["canon"].source_map)
 
+        # Strip comments from original sources before building the full code view.
+        # strip_comments preserves line count (blanks comment lines) so evidence
+        # line numbers remain correct for highlighting.
+        stripped_sources_a = {f: strip_comments(c, lang) for f, c in original_sources_a.items()}
+        stripped_sources_b = {f: strip_comments(c, lang) for f, c in original_sources_b.items()}
+
         # Build concatenated full source and per-file line offsets.
         # Evidence lines_a/b are converted from per-file to concatenated line numbers
         # so the frontend can highlight sections in a single unified code view.
-        full_source_a, file_offsets_a = _build_full_source(original_sources_a)
-        full_source_b, file_offsets_b = _build_full_source(original_sources_b)
+        full_source_a, file_offsets_a = _build_full_source(stripped_sources_a)
+        full_source_b, file_offsets_b = _build_full_source(stripped_sources_b)
 
         for block in evidence:
             off_a = file_offsets_a.get(block.get("file_a", ""), 0)
