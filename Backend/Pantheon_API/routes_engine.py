@@ -346,6 +346,156 @@ def compare_all(
         raise HTTPException(status_code=500, detail=f"Batch comparison failed: {e}")
 
 
+@router.post("/assignments/{assignment_id}/compare-repo")
+def compare_repo(
+    assignment_id: UUID,
+    user: dict = Depends(get_current_user),
+):
+    _require_professor(user)
+
+    with get_db_connection() as conn:
+        # Fetch all repo uploads for the repository linked to this assignment
+        repo_rows = conn.execute(
+            """
+            SELECT ru.upload_id, ru.filename, a.s3_bucket, a.s3_key, a.artifact_id
+            FROM repository_uploads ru
+            JOIN artifacts a ON a.artifact_id = ru.artifact_id
+            JOIN repositories r ON r.repository_id = ru.repository_id
+            WHERE r.assignment_id = %s AND r.owner_id = %s
+            """,
+            (str(assignment_id), str(user["user_id"])),
+        ).fetchall()
+
+        # Fetch all student submissions for this assignment
+        sub_rows = conn.execute(
+            """
+            SELECT s.submission_id, a.s3_bucket, a.s3_key
+            FROM submissions s
+            JOIN artifacts a ON a.artifact_id = s.artifact_id
+            WHERE s.assignment_id = %s
+            """,
+            (str(assignment_id),),
+        ).fetchall()
+
+    if not repo_rows:
+        raise HTTPException(status_code=404, detail="No repository uploads found for this assignment")
+    if not sub_rows:
+        raise HTTPException(status_code=400, detail="No student submissions found for this assignment")
+
+    with get_db_connection() as conn:
+        run_row = conn.execute(
+            """
+            INSERT INTO analysis_runs (assignment_id, initiated_by, engine_version, parameters, status)
+            VALUES (%s, %s, %s, %s::jsonb, 'running')
+            RETURNING run_id
+            """,
+            (str(assignment_id), str(user["user_id"]), ENGINE_VERSION, '{"mode":"repo_submission"}'),
+        ).fetchone()
+        run_id = run_row[0]
+
+        for repo_row in repo_rows:
+            conn.execute(
+                "INSERT INTO analysis_run_repository_uploads (run_id, upload_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (run_id, str(repo_row[0])),
+            )
+        for sub_row in sub_rows:
+            conn.execute(
+                "INSERT INTO analysis_run_submissions (run_id, submission_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (run_id, str(sub_row[0])),
+            )
+        conn.commit()
+
+    try:
+        pairs = []
+        with tempfile.TemporaryDirectory() as td:
+            tmp_dir = Path(td)
+
+            # Pre-download all submission zips once
+            sub_paths = {}
+            for sub_row in sub_rows:
+                sub_id, bucket, key = str(sub_row[0]), sub_row[1], sub_row[2]
+                zip_path = tmp_dir / f"sub_{sub_id}.zip"
+                s3.download_file(bucket, key, str(zip_path))
+                sub_paths[sub_id] = zip_path
+
+            for repo_row in repo_rows:
+                upload_id, repo_bucket, repo_key, artifact_id = (
+                    str(repo_row[0]), repo_row[2], repo_row[3], str(repo_row[4])
+                )
+                repo_zip = tmp_dir / f"repo_{upload_id}.zip"
+                s3.download_file(repo_bucket, repo_key, str(repo_zip))
+
+                for sub_row in sub_rows:
+                    sub_id = str(sub_row[0])
+                    sub_zip = sub_paths[sub_id]
+
+                    raw_result = engine_compare(
+                        str(repo_zip),
+                        str(sub_zip),
+                        submission_a_id=upload_id,
+                        submission_b_id=sub_id,
+                        assignment_id=str(assignment_id),
+                    )
+                    json_report = format_report_as_json(raw_result)
+                    score = json_report["similarityScore"] / 100.0
+
+                    pairs.append({
+                        "upload_id": upload_id,
+                        "artifact_id": artifact_id,
+                        "submission_id": sub_id,
+                        "score": score,
+                        "json_report": json_report,
+                    })
+
+        with get_db_connection() as conn:
+            for pair in pairs:
+                result_row = conn.execute(
+                    """
+                    INSERT INTO similarity_results (
+                        run_id, score, left_artifact_id, right_submission_id, prof_comparison
+                    )
+                    VALUES (%s, %s, %s, %s, TRUE)
+                    RETURNING result_id
+                    """,
+                    (run_id, pair["score"], pair["artifact_id"], pair["submission_id"]),
+                ).fetchone()
+                conn.execute(
+                    """
+                    INSERT INTO similarity_evidence (result_id, evidence_json, prof_comparison)
+                    VALUES (%s, %s::jsonb, TRUE)
+                    """,
+                    (result_row[0], json.dumps(pair["json_report"])),
+                )
+            conn.execute(
+                "UPDATE analysis_runs SET status = 'completed', completed_at = now() WHERE run_id = %s",
+                (run_id,),
+            )
+            conn.commit()
+
+        return {
+            "run_id": str(run_id),
+            "assignment_id": str(assignment_id),
+            "total_pairs": len(pairs),
+            "pairs": [
+                {
+                    "upload_id": p["upload_id"],
+                    "submission_id": p["submission_id"],
+                    "score": p["score"],
+                }
+                for p in pairs
+            ],
+        }
+
+    except Exception as e:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE analysis_runs SET status = 'failed', completed_at = now() WHERE run_id = %s",
+                (run_id,),
+            )
+            conn.commit()
+        raise HTTPException(status_code=500, detail=f"Repo comparison failed: {e}")
+
+
 @router.get("/similarity-score")
 def get_similarity_score(
     submission_id: UUID,
