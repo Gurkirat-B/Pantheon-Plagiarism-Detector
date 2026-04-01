@@ -307,14 +307,12 @@ def compare_all(
                 batch_result = engine_batch_analyze(
                     submissions_list,
                     assignment_id=str(assignment_id),
-                    threshold=0.0,
                     template_path=str(bp_zip),
                 )
             else:
                 batch_result = engine_batch_analyze(
                     submissions_list,
                     assignment_id=str(assignment_id),
-                    threshold=0.0,
                 )
 
         # 4) store a similarity_result + evidence row for each flagged pair
@@ -352,8 +350,6 @@ def compare_all(
             "run_id": str(run_id),
             "assignment_id": str(assignment_id),
             "total_pairs": batch_result["total_pairs"],
-            "flagged_pairs": batch_result["flagged_pairs"],
-            "threshold_used": batch_result["threshold_used"],
             "pairs": [
                 {
                     "submission_a": p["submission_a"],
