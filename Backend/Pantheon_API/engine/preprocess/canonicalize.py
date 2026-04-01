@@ -25,8 +25,7 @@ from engine.preprocess.strip_comments import strip_comments
 from engine.preprocess.stdlib_filter import filter_boilerplate
 
 ALLOWED_EXTS = {
-    ".java", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx",
-    ".py", ".js", ".ts", ".cs", ".go", ".rs", ".rb",
+    ".java", ".c", ".cpp"
 }
 
 
