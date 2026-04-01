@@ -56,13 +56,20 @@ def test_list_submissions_endpoint(mock_get_db):
 
 
 @patch("routes_engine.get_db_connection")
-def test_similarity_score_rejects_identical_queries(mock_get_db):
-    """Ensure getting similarity score fails if both IDs are the same."""
+def test_similarity_score_returns_404_when_missing(mock_get_db):
+    """Ensure getting similarity score returns 404 if not found."""
     sub_id = str(uuid.uuid4())
+    
+    mock_conn = MagicMock()
+    mock_conn.__enter__.return_value = mock_conn
+    mock_cursor = MagicMock()
+    mock_conn.execute.return_value = mock_cursor
+    mock_cursor.fetchall.return_value = []
+    mock_get_db.return_value = mock_conn
     
     response = client.get(
         f"/engine/similarity-score",
-        params={"submission_a_id": sub_id, "submission_b_id": sub_id}
+        params={"submission_id": sub_id}
     )
-    assert response.status_code == 400
-    assert "must be different" in response.json()["detail"]
+    assert response.status_code == 404
+    assert "No similarity results" in response.json()["detail"]
