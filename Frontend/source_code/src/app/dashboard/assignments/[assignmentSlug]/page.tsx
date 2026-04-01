@@ -12,7 +12,6 @@ export type Submission = {
   email: string;
   original_zip_name: string;
   submitted_at: string;
-  status: string;
   s3_bucket: string;
   s3_key: string;
   similarity_score?: number | null;

@@ -92,7 +92,9 @@ function AssignmentRow({
             Due {formatDate(assignment.due_date)}
           </span>
           <span>·</span>
-          <span className="capitalize">{assignment.language}</span>
+          <span className="capitalize">
+            {assignment.language === "cpp" ? "c++" : assignment.language}
+          </span>
           <span>·</span>
           <span>Key: {assignment.assignment_id}</span>
         </div>

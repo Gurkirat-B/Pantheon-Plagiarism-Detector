@@ -125,11 +125,13 @@ function getScoreSeverity(score: number): {
   if (score >= 50)
     return {
       label: "MEDIUM",
-      className: "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
+      className:
+        "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
     };
   return {
     label: "LOW",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    className:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
   };
 }
 
@@ -677,10 +679,12 @@ function CompareAllSuccessDialog({
 function SubmissionRow({
   submission,
   hasReports,
+  isHighRisk,
   onDetail,
 }: {
   submission: Submission;
   hasReports: boolean;
+  isHighRisk: boolean;
   onDetail: () => void;
 }) {
   return (
@@ -693,29 +697,27 @@ function SubmissionRow({
           <Badge variant="outline" className="font-mono text-xs">
             {submission.original_zip_name}
           </Badge>
-          <Badge
-            variant="outline"
-            className={`text-xs capitalize ${
-              submission.status === "accepted"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-slate-200 text-slate-500"
-            }`}
-          >
-            {submission.status}
-          </Badge>
           {hasReports ? (
             <Badge
               variant="outline"
-              className="text-xs border-blue-200 bg-blue-50 text-blue-700"
+              className="border-blue-200 bg-blue-50 text-xs text-blue-700"
             >
               Compared
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="text-xs border-slate-200 bg-slate-50 text-slate-400"
+              className="border-slate-200 bg-slate-50 text-xs text-slate-400"
             >
               Not compared
+            </Badge>
+          )}
+          {isHighRisk && (
+            <Badge
+              variant="outline"
+              className="border-red-200 bg-red-50 text-xs text-red-700"
+            >
+              High Risk
             </Badge>
           )}
         </div>
@@ -827,6 +829,12 @@ export function AssignmentView({
     reports.flatMap((r) => [r.submissionA, r.submissionB]),
   );
 
+  const submissionsHighRisk = new Set(
+    reports
+      .filter((r) => r.similarityScore >= 80)
+      .flatMap((r) => [r.submissionA, r.submissionB]),
+  );
+
   // Stats: similarityScore is already 0–100
   const avgScore =
     reports.length > 0
@@ -843,7 +851,10 @@ export function AssignmentView({
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => router.back()}
+        onClick={() => {
+          router.push("/dashboard");
+          router.refresh();
+        }}
         className="-ml-2 mb-6 gap-1.5 text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -925,6 +936,7 @@ export function AssignmentView({
           <LoadingButton
             onClick={handleCompareAll}
             loading={comparingAll}
+            disabled={submissions.length < 2}
             className="gap-2"
           >
             <Play className="h-4 w-4" />
@@ -944,7 +956,10 @@ export function AssignmentView({
               <SubmissionRow
                 key={submission.submission_id}
                 submission={submission}
-                hasReports={submissionsWithReports.has(submission.submission_id)}
+                hasReports={submissionsWithReports.has(
+                  submission.submission_id,
+                )}
+                isHighRisk={submissionsHighRisk.has(submission.submission_id)}
                 onDetail={() => setDetailSubmission(submission)}
               />
             ))
