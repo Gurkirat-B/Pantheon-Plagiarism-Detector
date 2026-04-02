@@ -18,6 +18,7 @@ import {
   Play,
   Info,
   Plus,
+  Download,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,12 @@ import {
 } from "@/lib/report_types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatDate(dateStr: string) {
   const [year, month, day] = dateStr.split("T")[0].split("-");
@@ -402,10 +409,8 @@ function ComparisonDialog({
 
   const filesA = Object.keys(report.fileOffsetsA);
   const filesB = Object.keys(report.fileOffsetsB);
-  const fileNameA =
-    filesA.length === 1 ? filesA[0] : `${filesA.length} files`;
-  const fileNameB =
-    filesB.length === 1 ? filesB[0] : `${filesB.length} files`;
+  const fileNameA = filesA.length === 1 ? filesA[0] : `${filesA.length} files`;
+  const fileNameB = filesB.length === 1 ? filesB[0] : `${filesB.length} files`;
   const fullCodeA = report.fullCodeA;
   const fullCodeB = report.fullCodeB;
 
@@ -630,6 +635,46 @@ function ReportListDialog({
   );
 }
 
+// ─── Export Confirm Dialog ────────────────────────────────────────────────────
+
+function ExportConfirmDialog({
+  open,
+  onClose,
+  onConfirm,
+  loading,
+  submissionCount,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  loading: boolean;
+  submissionCount: number;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Export Submissions</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          You are about to export all {submissionCount} student submission
+          {submissionCount !== 1 ? "s" : ""} for this assignment. A download
+          link will be generated and your download will start automatically.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <LoadingButton onClick={onConfirm} loading={loading} className="gap-2">
+            <Download className="h-4 w-4" />
+            {loading ? "Exporting..." : "Export"}
+          </LoadingButton>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Compare All Success Dialog ───────────────────────────────────────────────
 
 function CompareAllSuccessDialog({
@@ -781,6 +826,8 @@ export function AssignmentView({
   const [uploadDialogType, setUploadDialogType] = useState<
     "boilerplate" | "repository" | null
   >(null);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const submissions = assignment.submissions;
 
@@ -803,6 +850,11 @@ export function AssignmentView({
 
   const handleCompareAll = async () => {
     setComparingAll(true);
+    toast({
+      title: "Comparison started",
+      description:
+        "This may take a few seconds. We'll notify you when it's done.",
+    });
     try {
       const res = await fetch(
         `/api/engine/assignments/${assignment.assignment_id}/compare-all`,
@@ -829,6 +881,31 @@ export function AssignmentView({
       toast({ variant: "destructive", title: "Comparison failed." });
     } finally {
       setComparingAll(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/submissions/${assignment.assignment_id}/export`,
+      );
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setExportConfirmOpen(false);
+      toast({
+        title: "Export ready",
+        description: `${data.count} submission${data.count !== 1 ? "s" : ""} · ${formatBytes(data.size_bytes)}. Your download will start shortly.`,
+      });
+      window.open(data.download_url, "_blank");
+    } catch {
+      toast({ variant: "destructive", title: "Export failed." });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -971,6 +1048,15 @@ export function AssignmentView({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={submissions.length === 0}
+              onClick={() => setExportConfirmOpen(true)}
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
             <LoadingButton
               onClick={handleCompareAll}
               loading={comparingAll}
@@ -1005,6 +1091,14 @@ export function AssignmentView({
           )}
         </div>
       </div>
+
+      <ExportConfirmDialog
+        open={exportConfirmOpen}
+        onClose={() => setExportConfirmOpen(false)}
+        onConfirm={handleExport}
+        loading={exporting}
+        submissionCount={submissions.length}
+      />
 
       <ReportListDialog
         open={detailSubmission !== null}
