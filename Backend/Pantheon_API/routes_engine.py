@@ -449,6 +449,19 @@ def compare_repo(
             (str(assignment_id),),
         ).fetchall()
 
+        # Check for boilerplate upload for this assignment
+        boilerplate_row = conn.execute(
+            """
+            SELECT a.s3_bucket, a.s3_key
+            FROM assignment_boilerplate ab
+            JOIN artifacts a ON a.artifact_id = ab.artifact_id
+            WHERE ab.assignment_id = %s
+            ORDER BY ab.uploaded_at DESC
+            LIMIT 1
+            """,
+            (str(assignment_id),),
+        ).fetchone()
+
     if not repo_rows:
         raise HTTPException(status_code=404, detail="No repository uploads found for this assignment")
     if not sub_rows:
@@ -490,6 +503,12 @@ def compare_repo(
                 s3.download_file(bucket, key, str(zip_path))
                 sub_paths[sub_id] = zip_path
 
+            template_path = None
+            if boilerplate_row:
+                bp_zip = tmp_dir / "boilerplate.zip"
+                s3.download_file(boilerplate_row[0], boilerplate_row[1], str(bp_zip))
+                template_path = str(bp_zip)
+
             for repo_row in repo_rows:
                 upload_id, repo_bucket, repo_key = (
                     str(repo_row[0]), repo_row[2], repo_row[3]
@@ -501,13 +520,23 @@ def compare_repo(
                     sub_id = str(sub_row[0])
                     sub_zip = sub_paths[sub_id]
 
-                    raw_result = engine_compare(
-                        str(repo_zip),
-                        str(sub_zip),
-                        submission_a_id=upload_id,
-                        submission_b_id=sub_id,
-                        assignment_id=str(assignment_id),
-                    )
+                    if template_path:
+                        raw_result = engine_compare(
+                            str(repo_zip),
+                            str(sub_zip),
+                            submission_a_id=upload_id,
+                            submission_b_id=sub_id,
+                            assignment_id=str(assignment_id),
+                            template_path=template_path,
+                        )
+                    else:
+                        raw_result = engine_compare(
+                            str(repo_zip),
+                            str(sub_zip),
+                            submission_a_id=upload_id,
+                            submission_b_id=sub_id,
+                            assignment_id=str(assignment_id),
+                        )
                     json_report = format_report_as_json(raw_result)
                     score = json_report["similarityScore"] / 100.0
 
