@@ -301,6 +301,31 @@ async def upload_boilerplate(
         "message": "Boilerplate uploaded successfully"
     }
 
+@router.get("/boilerplate/{assignment_id}")
+def get_boilerplate(
+    assignment_id: UUID,
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] != "professor":
+        raise HTTPException(status_code=403, detail="Only professors can view boilerplate")
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT ab.name
+            FROM assignment_boilerplate ab
+            JOIN repositories r ON r.assignment_id = ab.assignment_id
+            WHERE ab.assignment_id = %s
+              AND r.owner_id = %s
+            """,
+            (str(assignment_id), str(user["user_id"])),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No boilerplate found for this assignment")
+
+    return {"filename": row[0]}
+
 @router.get("/{assignment_id}/export")
 def export_submissions(
     assignment_id: UUID,
