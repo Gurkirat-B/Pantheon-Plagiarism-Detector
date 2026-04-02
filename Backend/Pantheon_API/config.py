@@ -15,6 +15,8 @@ DB_PASS = os.getenv("PANTHEON_DB_PASSWORD")
 
 S3_BUCKET = os.getenv("PANTHEON_S3_BUCKET")
 
-JWT_SECRET_KEY = os.getenv("PANTHEON_JWT_SECRET_KEY", "pantheon_secret_key")
+JWT_SECRET_KEY = os.getenv("PANTHEON_JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    raise RuntimeError("PANTHEON_JWT_SECRET_KEY environment variable is not set")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINS = 60
