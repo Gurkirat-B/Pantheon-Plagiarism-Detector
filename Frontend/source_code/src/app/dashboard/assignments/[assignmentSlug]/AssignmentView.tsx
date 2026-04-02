@@ -381,10 +381,10 @@ function ComparisonDialog({
 
   if (!report) return null;
 
-  const fileNameA = Object.keys(report.fullCodeA)[0] ?? "Submission A";
-  const fileNameB = Object.keys(report.fullCodeB)[0] ?? "Submission B";
-  const fullCodeA = report.fullCodeA[fileNameA] ?? "";
-  const fullCodeB = report.fullCodeB[fileNameB] ?? "";
+  const fileNameA = Object.keys(report.fileOffsetsA)[0] ?? "Submission A";
+  const fileNameB = Object.keys(report.fileOffsetsB)[0] ?? "Submission B";
+  const fullCodeA = report.fullCodeA;
+  const fullCodeB = report.fullCodeB;
 
   const highlightMapA = buildHighlightMap(report.matches, fileNameA, "A");
   const highlightMapB = buildHighlightMap(report.matches, fileNameB, "B");
@@ -610,12 +610,10 @@ function CompareAllSuccessDialog({
   open,
   onClose,
   totalPairs,
-  flaggedPairs,
 }: {
   open: boolean;
   onClose: () => void;
   totalPairs: number;
-  flaggedPairs: number;
 }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -641,16 +639,6 @@ function CompareAllSuccessDialog({
               </span>
               <span className="text-sm font-semibold text-slate-800">
                 {totalPairs}
-              </span>
-            </div>
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm text-muted-foreground">
-                Flagged pairs
-              </span>
-              <span
-                className={`text-sm font-semibold ${flaggedPairs > 0 ? "text-red-600" : "text-emerald-600"}`}
-              >
-                {flaggedPairs}
               </span>
             </div>
           </div>
@@ -763,7 +751,6 @@ export function AssignmentView({
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [compareAllResult, setCompareAllResult] = useState<{
     totalPairs: number;
-    flaggedPairs: number;
   } | null>(null);
 
   const submissions = assignment.submissions;
@@ -807,7 +794,6 @@ export function AssignmentView({
       await refreshReports();
       setCompareAllResult({
         totalPairs: result.total_pairs ?? 0,
-        flaggedPairs: result.flagged_pairs ?? 0,
       });
       setSuccessDialogOpen(true);
     } catch {
@@ -985,7 +971,6 @@ export function AssignmentView({
         open={successDialogOpen}
         onClose={() => setSuccessDialogOpen(false)}
         totalPairs={compareAllResult?.totalPairs ?? 0}
-        flaggedPairs={compareAllResult?.flaggedPairs ?? 0}
       />
     </main>
   );

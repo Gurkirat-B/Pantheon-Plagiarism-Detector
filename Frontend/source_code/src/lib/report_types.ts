@@ -27,8 +27,11 @@ export type ComparisonReport = {
   mediumCount: number;
   lowCount: number;
   matches: CodeMatch[];
-  fullCodeA: Record<string, string>; // { "filename.java": "full code..." }
-  fullCodeB: Record<string, string>;
+  fullCodeA: string;
+  fullCodeB: string;
+  fileOffsetsA: Record<string, number>; // { "filename.java": startLine }
+  fileOffsetsB: Record<string, number>;
+  identicalSubmissions: boolean;
 };
 
 // ─── Map JSON response → ComparisonReport ────────────────────────────────────
@@ -48,8 +51,11 @@ export function mapReport(json: Record<string, unknown>): ComparisonReport {
     mediumCount: Number(json.Medium ?? 0),
     lowCount: Number(json.Low ?? 0),
     matches: Array.isArray(json.matches) ? (json.matches as CodeMatch[]) : [],
-    fullCodeA: (json.fullCodeA as Record<string, string>) ?? {},
-    fullCodeB: (json.fullCodeB as Record<string, string>) ?? {},
+    fullCodeA: String(json.fullCodeA ?? ""),
+    fullCodeB: String(json.fullCodeB ?? ""),
+    fileOffsetsA: (json.fileOffsetsA as Record<string, number>) ?? {},
+    fileOffsetsB: (json.fileOffsetsB as Record<string, number>) ?? {},
+    identicalSubmissions: Boolean(json.identicalSubmissions ?? false),
   };
 }
 

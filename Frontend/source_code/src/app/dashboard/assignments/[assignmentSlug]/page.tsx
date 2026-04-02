@@ -46,8 +46,11 @@ export type SimilarityReport = {
   language: string;
   // Full report detail fields
   matches: RawMatch[];
-  fullCodeA: Record<string, string>;
-  fullCodeB: Record<string, string>;
+  fullCodeA: string;
+  fullCodeB: string;
+  fileOffsetsA: Record<string, number>;
+  fileOffsetsB: Record<string, number>;
+  identicalSubmissions: boolean;
   High: number;
   Medium: number;
   Low: number;
