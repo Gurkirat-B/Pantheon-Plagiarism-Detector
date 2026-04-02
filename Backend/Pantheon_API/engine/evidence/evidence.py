@@ -293,10 +293,10 @@ def build_evidence(
         a_code_lines = _meaningful_lines(code_a)
         b_code_lines = _meaningful_lines(code_b)
 
-        # Require at least 5 meaningful code lines on each side — filters out
-        # trivial blocks that are just braces, method signatures, or short
-        # structural transitions between real copied sections.
-        if a_code_lines < 5 or b_code_lines < 5:
+        # Require at least 4 meaningful code lines on each side — filters out
+        # trivial blocks that share only structural tokens (return result; })
+        # while still catching real matches missed by the original threshold of 5.
+        if a_code_lines < 4 or b_code_lines < 4:
             continue
 
         token_count = max(a_code_lines, b_code_lines) * 8

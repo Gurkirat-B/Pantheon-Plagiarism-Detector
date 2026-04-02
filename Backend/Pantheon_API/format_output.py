@@ -184,14 +184,16 @@ def format_report_as_json(result) -> dict:
         lines_a = block.get("lines_a", [1, 1])
         lines_b = block.get("lines_b", [1, 1])
         matches.append({
-            "index":    i,
-            "severity": block.get("match_strength", "low").upper(),
-            "fileA":    block.get("file_a", ""),
-            "linesA":   [lines_a[0], lines_a[1]],
-            "fileB":    block.get("file_b", ""),
-            "linesB":   [lines_b[0], lines_b[1]],
-            "codeA":    block.get("code_a", ""),
-            "codeB":    block.get("code_b", ""),
+            "index":            i,
+            "severity":         block.get("match_strength", "low").upper(),
+            "fileA":            block.get("file_a", ""),
+            "linesA":           [lines_a[0], lines_a[1]],
+            "lineHighlightsA":  block.get("line_highlights_a", []),
+            "fileB":            block.get("file_b", ""),
+            "linesB":           [lines_b[0], lines_b[1]],
+            "lineHighlightsB":  block.get("line_highlights_b", []),
+            "codeA":            block.get("code_a", ""),
+            "codeB":            block.get("code_b", ""),
         })
 
     return {

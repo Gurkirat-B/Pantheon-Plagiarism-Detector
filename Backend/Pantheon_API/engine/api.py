@@ -229,11 +229,29 @@ def compare(
         full_source_a, file_offsets_a = _build_full_source(stripped_sources_a)
         full_source_b, file_offsets_b = _build_full_source(stripped_sources_b)
 
+        full_a_lines = full_source_a.splitlines()
+        full_b_lines = full_source_b.splitlines()
+
         for block in evidence:
             off_a = file_offsets_a.get(block.get("file_a", ""), 0)
             off_b = file_offsets_b.get(block.get("file_b", ""), 0)
             block["lines_a"] = [block["lines_a"][0] + off_a, block["lines_a"][1] + off_a]
             block["lines_b"] = [block["lines_b"][0] + off_b, block["lines_b"][1] + off_b]
+
+            # Re-derive code snippets directly from the final (trimmed + offset) line
+            # ranges so code_a/b is always consistent with lines_a/b.
+            # (evidence.py computes code before _deduplicate_evidence_1to1 trims the
+            # block bounds, causing a 1-line offset in ~20% of blocks.)
+            a1, a2 = block["lines_a"]
+            b1, b2 = block["lines_b"]
+            block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
+            block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
+
+            # Offset-adjust highlights and clamp to final section bounds.
+            block["line_highlights_a"] = [l + off_a for l in block.get("line_highlights_a", [])
+                                          if a1 <= l + off_a <= a2]
+            block["line_highlights_b"] = [l + off_b for l in block.get("line_highlights_b", [])
+                                          if b1 <= l + off_b <= b2]
 
         # For near-identical submissions (>=95%), replace evidence with a single
         # synthetic block covering the entire file — no Winnowing gaps, full match.
