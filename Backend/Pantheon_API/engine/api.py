@@ -80,6 +80,12 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
                        normalize_ids=False, normalize_literals=False,
                        normalize_access=False)
 
+    # Hard cap on token count — prevents adversarial giant files from making
+    # fingerprinting O(n²). 50k tokens ≈ 5000-8000 lines of real code.
+    # Any legitimate student submission is well under this limit.
+    tok_norm = tok_norm[:50000]
+    tok_raw  = tok_raw[:50000]
+
     # Scale k and W to submission length — short submissions need smaller k
     # to produce any fingerprints, long ones benefit from higher k to reduce
     # noise. W stays roughly k//2 so the guaranteed-match length scales too.
@@ -201,6 +207,27 @@ def compare(
             canonical_text_b=proc_b["canon"].canonical_text,
             lang=lang,
         )
+        # Loop-normalized evidence pass (Option 5): map for/while/do → LOOP so
+        # loop-swapped methods produce k-gram matches regardless of loop type.
+        tok_loop_a = _normalize_loops(proc_a["tok_norm"])
+        tok_loop_b = _normalize_loops(proc_b["tok_norm"])
+        fp_loop_a = build_fingerprints(tok_loop_a, k=12)
+        fp_loop_b = build_fingerprints(tok_loop_b, k=12)
+        evidence_loop = build_evidence(
+            fp_loop_a, fp_loop_b,
+            tok_a=tok_loop_a,
+            tok_b=tok_loop_b,
+            source_map_a=proc_a["canon"].source_map,
+            source_map_b=proc_b["canon"].source_map,
+            k=12,
+            merge_gap=merge_gap,
+            work_dir_a=dir_a,
+            work_dir_b=dir_b,
+            canonical_text_a=proc_a["canon"].canonical_text,
+            canonical_text_b=proc_b["canon"].canonical_text,
+            lang=lang,
+        )
+        evidence = _merge_evidence(evidence, evidence_loop)
         evidence = _merge_evidence(evidence, evidence_short)
         evidence = _deduplicate_evidence_1to1(evidence)
 
@@ -244,12 +271,25 @@ def compare(
             block["lines_a"] = [block["lines_a"][0] + off_a, block["lines_a"][1] + off_a]
             block["lines_b"] = [block["lines_b"][0] + off_b, block["lines_b"][1] + off_b]
 
-            # Re-derive code snippets directly from the final (trimmed + offset) line
-            # ranges so code_a/b is always consistent with lines_a/b.
-            # (evidence.py computes code before _deduplicate_evidence_1to1 trims the
-            # block bounds, causing a 1-line offset in ~20% of blocks.)
             a1, a2 = block["lines_a"]
             b1, b2 = block["lines_b"]
+
+            # Option 1 — extend block upward while lines above are identical.
+            # Recovers method signatures and class headers that are copy-pasted
+            # verbatim above a matched block but fall below the 4-line threshold.
+            while a1 > 1 and b1 > 1:
+                la = full_a_lines[a1 - 2].strip()
+                lb = full_b_lines[b1 - 2].strip()
+                if la and lb and la == lb:
+                    a1 -= 1
+                    b1 -= 1
+                else:
+                    break
+            block["lines_a"] = [a1, a2]
+            block["lines_b"] = [b1, b2]
+
+            # Re-derive code snippets directly from the final (trimmed + offset) line
+            # ranges so code_a/b is always consistent with lines_a/b.
             block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
 
@@ -522,6 +562,15 @@ def _deduplicate_evidence_1to1(evidence: list) -> list:
         b["lines_a"][0],
     ))
     return result
+
+
+def _normalize_loops(tokens):
+    """Replace for/while/do keyword tokens with LOOP so loop-swapped code
+    produces k-gram matches regardless of which loop construct was used."""
+    from engine.tokenize.lex import Token
+    _LOOP_KW = {"for", "while", "do"}
+    return [Token(text="LOOP", line=t.line) if t.text in _LOOP_KW else t
+            for t in tokens]
 
 
 def _blank_header_lines(code: str) -> str:

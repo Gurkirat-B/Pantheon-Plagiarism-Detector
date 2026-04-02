@@ -119,7 +119,7 @@ def detect_obfuscation(
                 pos_b = fp_b_norm[h][0] / max(len(tok_b_norm), 1)
                 position_deltas.append(abs(pos_a - pos_b))
             avg_delta = sum(position_deltas) / len(position_deltas) if position_deltas else 0
-            if avg_delta > 0.25:
+            if avg_delta > 0.20:
                 flags.append("code_reordering")
 
     # ── 6. Switch ↔ If-Else Conversion ───────────────────────────────
