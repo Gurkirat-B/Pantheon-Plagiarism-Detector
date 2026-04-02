@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -54,7 +54,7 @@ import type {
 } from "./page";
 import {
   mapReport,
-  buildHighlightMap,
+  buildLineToBlockMap,
   type ComparisonReport,
   type MatchSeverity,
   type CodeMatch,
@@ -92,17 +92,6 @@ function getSeverityClass(severity: MatchSeverity) {
       return "border-orange-200 bg-orange-50 text-orange-700";
     case "LOW":
       return "border-yellow-200 bg-yellow-50 text-yellow-700";
-  }
-}
-
-function getHighlightBg(severity: MatchSeverity) {
-  switch (severity) {
-    case "HIGH":
-      return "bg-red-300";
-    case "MEDIUM":
-      return "bg-orange-200";
-    case "LOW":
-      return "bg-yellow-200";
   }
 }
 
@@ -254,18 +243,35 @@ function MatchCodePanel({
 
 // ─── Full Code Panel ──────────────────────────────────────────────────────────
 
+const BLOCK_COLORS = [
+  "bg-sky-200",
+  "bg-violet-200",
+  "bg-emerald-200",
+  "bg-amber-200",
+  "bg-rose-200",
+  "bg-teal-200",
+  "bg-orange-200",
+  "bg-fuchsia-200",
+  "bg-cyan-200",
+  "bg-lime-200",
+];
+
 function FullCodePanel({
   label,
   fileName,
   code,
-  highlightMap,
+  lineToBlockMap,
   language,
+  scrollContainerRef,
+  onHighlightClick,
 }: {
   label: string;
   fileName: string;
   code: string;
-  highlightMap: Map<number, MatchSeverity>;
+  lineToBlockMap: Map<number, number>;
   language: string;
+  scrollContainerRef: RefObject<HTMLDivElement>;
+  onHighlightClick?: (blockIndex: number) => void;
 }) {
   const lines = code.split("\n");
 
@@ -278,47 +284,48 @@ function FullCodePanel({
         <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
           {fileName}
         </p>
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-red-300" />
-            High
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-orange-200" />
-            Medium
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-yellow-200" />
-            Low
-          </span>
-        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Click a highlighted line to scroll the other panel to its match.
+        </p>
       </div>
 
-      <div className="flex-1 overflow-auto bg-muted">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-muted">
         <table className="w-full font-mono text-sm">
           <tbody>
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
-              const severity =
-                line.trim() === "" ? undefined : highlightMap.get(lineNum);
-              const { code: codePart, comment } = severity
-                ? splitInlineComment(line, language)
-                : { code: line, comment: null };
-
-              const highlightSpanClass = severity
-                ? `rounded-sm px-0.5 ${getHighlightBg(severity)}`
-                : "";
+              const blockIndex =
+                line.trim() === "" ? undefined : lineToBlockMap.get(lineNum);
+              const color =
+                blockIndex !== undefined
+                  ? BLOCK_COLORS[blockIndex % BLOCK_COLORS.length]
+                  : undefined;
+              const { code: codePart, comment } =
+                blockIndex !== undefined
+                  ? splitInlineComment(line, language)
+                  : { code: line, comment: null };
 
               return (
-                <tr key={lineNum} className="leading-relaxed">
+                <tr
+                  key={lineNum}
+                  data-line={lineNum}
+                  className={`leading-relaxed${blockIndex !== undefined ? " cursor-pointer" : ""}`}
+                  onClick={
+                    blockIndex !== undefined
+                      ? () => onHighlightClick?.(blockIndex)
+                      : undefined
+                  }
+                >
                   <td className="w-10 select-none px-3 py-0 text-right align-top text-slate-300">
                     {lineNum}
                   </td>
                   <td className="px-3 py-0">
                     <pre className="whitespace-pre text-slate-800">
-                      {severity ? (
+                      {color ? (
                         <>
-                          <span className={highlightSpanClass}>{codePart}</span>
+                          <span className={`rounded-sm px-0.5 ${color}`}>
+                            {codePart}
+                          </span>
                           {comment && <span>{comment}</span>}
                         </>
                       ) : (
@@ -409,6 +416,13 @@ function ComparisonDialog({
   emailById: Map<string, string>;
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>("blocks");
+  const scrollRefA = useRef<HTMLDivElement>(null);
+  const scrollRefB = useRef<HTMLDivElement>(null);
+
+  const handleClose = () => {
+    setViewMode("blocks");
+    onClose();
+  };
 
   if (!report) return null;
 
@@ -416,14 +430,32 @@ function ComparisonDialog({
   const filesB = Object.keys(report.fileOffsetsB);
   const fileNameA = filesA.length === 1 ? filesA[0] : `${filesA.length} files`;
   const fileNameB = filesB.length === 1 ? filesB[0] : `${filesB.length} files`;
-  const fullCodeA = report.fullCodeA;
-  const fullCodeB = report.fullCodeB;
 
-  const highlightMapA = buildHighlightMap(report.matches, "A");
-  const highlightMapB = buildHighlightMap(report.matches, "B");
+  const lineToBlockMapA = buildLineToBlockMap(report.matches, "A");
+  const lineToBlockMapB = buildLineToBlockMap(report.matches, "B");
+
+  const blockToHighlightsA = new Map<number, number[]>(
+    report.matches.map((m, i) => [i, m.lineHighlightsA]),
+  );
+  const blockToHighlightsB = new Map<number, number[]>(
+    report.matches.map((m, i) => [i, m.lineHighlightsB]),
+  );
+
+  const scrollToBlock = (
+    blockIndex: number,
+    blockToHighlights: Map<number, number[]>,
+    containerRef: RefObject<HTMLDivElement>,
+  ) => {
+    const lines = blockToHighlights.get(blockIndex);
+    if (!lines || lines.length === 0) return;
+    const el = containerRef.current?.querySelector(
+      `[data-line="${lines[0]}"]`,
+    );
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-5">
           <div className="flex items-center justify-between">
@@ -529,24 +561,29 @@ function ComparisonDialog({
           )}
 
           {viewMode === "fullcode" && (
-            <div className="mx-6 my-5">
-              <p className="mb-3 text-sm font-semibold text-slate-700">
-                Full Submissions — highlighted lines indicate matching sections
-              </p>
-              <div className="flex gap-3" style={{ minHeight: "500px" }}>
+            <div className="mx-6 mt-5 pb-6">
+              <div className="flex h-[80vh] gap-3">
                 <FullCodePanel
                   label={emailById.get(report.submissionA) ?? "Submission A"}
                   fileName={fileNameA}
-                  code={fullCodeA}
-                  highlightMap={highlightMapA}
+                  code={report.fullCodeA}
+                  lineToBlockMap={lineToBlockMapA}
                   language={report.language}
+                  scrollContainerRef={scrollRefA}
+                  onHighlightClick={(bi) =>
+                    scrollToBlock(bi, blockToHighlightsB, scrollRefB)
+                  }
                 />
                 <FullCodePanel
                   label={emailById.get(report.submissionB) ?? "Submission B"}
                   fileName={fileNameB}
-                  code={fullCodeB}
-                  highlightMap={highlightMapB}
+                  code={report.fullCodeB}
+                  lineToBlockMap={lineToBlockMapB}
                   language={report.language}
+                  scrollContainerRef={scrollRefB}
+                  onHighlightClick={(bi) =>
+                    scrollToBlock(bi, blockToHighlightsA, scrollRefA)
+                  }
                 />
               </div>
             </div>

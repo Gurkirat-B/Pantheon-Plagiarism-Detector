@@ -104,6 +104,25 @@ export function mapReport(json: Record<string, unknown>): ComparisonReport {
   };
 }
 
+// ─── Line → block index map (for per-block coloring in full code view) ────────
+
+export function buildLineToBlockMap(
+  matches: CodeMatch[],
+  side: "A" | "B",
+): Map<number, number> {
+  const map = new Map<number, number>();
+  matches.forEach((match, blockIndex) => {
+    const highlights =
+      side === "A" ? match.lineHighlightsA : match.lineHighlightsB;
+    for (const lineNum of highlights) {
+      if (!map.has(lineNum)) {
+        map.set(lineNum, blockIndex);
+      }
+    }
+  });
+  return map;
+}
+
 // ─── Line highlight helper ────────────────────────────────────────────────────
 
 export type HighlightRange = {
