@@ -34,6 +34,26 @@ import { cn } from "@/lib/utils";
 import { LoadingButton } from "../LoadingButton";
 import JSZip from "jszip";
 
+const SOURCE_EXTENSIONS = [".java", ".cpp", ".c"];
+
+async function zipHasValidSource(zip: JSZip, depth = 0): Promise<boolean> {
+  if (depth > 3) return false;
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    if (SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext))) return true;
+    if (name.endsWith(".zip")) {
+      try {
+        const buf = await entry.async("arraybuffer");
+        const nested = await JSZip.loadAsync(buf);
+        if (await zipHasValidSource(nested, depth + 1)) return true;
+      } catch {
+        // skip unreadable nested zip
+      }
+    }
+  }
+  return false;
+}
+
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const formSchema = z.object({
@@ -69,19 +89,12 @@ export default function FileUpload() {
       for (const file of acceptedFiles) {
         try {
           const zip = await JSZip.loadAsync(file);
-          const fileNames = Object.keys(zip.files).filter(
-            (name) => !zip.files[name].dir, // exclude directory entries
-          );
-
-          const hasValidSource = fileNames.some((name) =>
-            [".java", ".cpp", ".c"].some((ext) => name.endsWith(ext)),
-          );
-
+          const hasValidSource = await zipHasValidSource(zip);
           if (!hasValidSource) {
             form.setError("files", {
               type: "manual",
               message:
-                "The zip must contain at least one .java, .cpp, or .c file.",
+                "The zip must contain at least one .java, .cpp, or .c file (including inside nested zips).",
             });
             return;
           }

@@ -28,6 +28,26 @@ import { LoadingButton } from "./LoadingButton";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
+const SOURCE_EXTENSIONS = [".java", ".cpp", ".c", ".h"];
+
+async function zipHasValidSource(zip: JSZip, depth = 0): Promise<boolean> {
+  if (depth > 10) return false;
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    if (SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext))) return true;
+    if (name.endsWith(".zip")) {
+      try {
+        const buf = await entry.async("arraybuffer");
+        const nested = await JSZip.loadAsync(buf);
+        if (await zipHasValidSource(nested, depth + 1)) return true;
+      } catch {
+        // skip unreadable nested zip
+      }
+    }
+  }
+  return false;
+}
+
 export type UploadSuccessData = {
   details: Array<{ label: string; value: string }>;
 };
@@ -80,20 +100,15 @@ export function FileUploadDialog({
 
       try {
         const zip = await JSZip.loadAsync(file);
-        const fileNames = Object.keys(zip.files).filter(
-          (name) => !zip.files[name].dir,
-        );
-        // const hasValidSource = fileNames.some((name) =>
-        //   [".java", ".cpp", ".c"].some((ext) => name.endsWith(ext)),
-        // );
-        // if (!hasValidSource) {
-        //   form.setError("files", {
-        //     type: "manual",
-        //     message:
-        //       "The zip must contain at least one .java, .cpp, or .c file.",
-        //   });
-        //   return;
-        // }
+        const hasValidSource = await zipHasValidSource(zip);
+        if (!hasValidSource) {
+          form.setError("files", {
+            type: "manual",
+            message:
+              "The zip must contain at least one .java, .cpp, or .c file (including inside nested zips).",
+          });
+          return;
+        }
       } catch {
         form.setError("files", {
           type: "manual",
