@@ -3,12 +3,10 @@ After the demo
 Frontend
 - Think about api calls for multiple buttons vs load the whole page DONE
 - The code will be COSC 4P02, but the name will be the actual course name for visual purposes DONE
-- Add timestamps for logins LOW LOW PRIORITY
-- Add light and dark mode 
 - Add a "my account" to the professor view DONE
-- Add logic to not add an assignment for an old date
+- Add logic to not add an assignment for an old date DONE
 - Remove the fact that when you create a new assignment and click cancel, the information is already there DONE
-- For the detail button in the assignment dashboard, it should show the assignment code fully for that student
+- For the detail button in the assignment dashboard, it should show the assignment code fully for that student DONE
 - Remove student password page DONE
 - Remove student score page DONE
 - Remove student submission id page after submission DONE
@@ -18,20 +16,19 @@ Frontend
 Engine
 - fix the issue where a zip inside a zip doesn't register for the student view file submission DONE
 - Creating a test suite HIGH PRIORITY
-- Doing robust testing HIGH PRIOIRTY
+- Doing robust testing DONE
 - Show the analysis runs, from all the submission, in a descending order by default DONE
-- Add a button to switch the view to ascending order LOW PRIORITY
 
 
 Backend
-- Create a folder for previous year submissions HIGH PRIORITY
-- Add the ability to change the language after an assignment is created DONEE
-- Add api for course change names 
-- The instructor to compare past assignments 
+- Create a folder for previous year submissions DONE
+- Add the ability to change the language after an assignment is created DONE
+- Add api for course change names DONE
+- The instructor to compare past assignments DONE
 - Remove extra settings from assignments api DONE
-- Remove assignments/course/{course_id} api 
-- Add logic to not add an assignment for an old date 
-- fix the language selector so it works
+- Remove assignments/course/{course_id} api DONE
+- Add logic to not add an assignment for an old date DONE
+- fix the language selector so it works DONE
 
 
 Not Adding Anymore
@@ -48,6 +45,9 @@ Not Adding Anymore
 - "List of students" button on Course page
 - Ability to set up auto-comparisons for submissions
 - fix the language selector so it works 
+- Add timestamps for logins
+- Add light and dark mode 
+- Add a button to switch the view to ascending order
 
 
 Espionage
