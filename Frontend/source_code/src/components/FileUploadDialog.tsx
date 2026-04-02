@@ -28,6 +28,10 @@ import { LoadingButton } from "./LoadingButton";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
+export type UploadSuccessData = {
+  details: Array<{ label: string; value: string }>;
+};
+
 const formSchema = z.object({
   files: z
     .array(z.instanceof(File))
@@ -55,10 +59,10 @@ export function FileUploadDialog({
   onClose: () => void;
   title: string;
   description: string;
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File) => Promise<UploadSuccessData>;
 }) {
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [successData, setSuccessData] = useState<UploadSuccessData | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -79,17 +83,17 @@ export function FileUploadDialog({
         const fileNames = Object.keys(zip.files).filter(
           (name) => !zip.files[name].dir,
         );
-        const hasValidSource = fileNames.some((name) =>
-          [".java", ".cpp", ".c"].some((ext) => name.endsWith(ext)),
-        );
-        if (!hasValidSource) {
-          form.setError("files", {
-            type: "manual",
-            message:
-              "The zip must contain at least one .java, .cpp, or .c file.",
-          });
-          return;
-        }
+        // const hasValidSource = fileNames.some((name) =>
+        //   [".java", ".cpp", ".c"].some((ext) => name.endsWith(ext)),
+        // );
+        // if (!hasValidSource) {
+        //   form.setError("files", {
+        //     type: "manual",
+        //     message:
+        //       "The zip must contain at least one .java, .cpp, or .c file.",
+        //   });
+        //   return;
+        // }
       } catch {
         form.setError("files", {
           type: "manual",
@@ -105,16 +109,16 @@ export function FileUploadDialog({
 
   const handleClose = () => {
     form.reset();
-    setSuccess(false);
+    setSuccessData(null);
     onClose();
   };
 
   const onSubmit = async (data: FormValues) => {
     setLoading(true);
     try {
-      await onUpload(data.files[0]);
+      const result = await onUpload(data.files[0]);
       form.reset();
-      setSuccess(true);
+      setSuccessData(result);
     } catch (err) {
       form.setError("root", {
         type: "manual",
@@ -133,16 +137,26 @@ export function FileUploadDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        {success ? (
+        {successData ? (
           <div className="flex flex-col items-center gap-5 py-4 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
               <CheckCircle2 className="h-9 w-9 text-emerald-600" />
             </div>
             <div className="space-y-1.5">
               <h2 className="text-xl font-bold">Upload Successful!</h2>
-              <p className="text-sm text-muted-foreground">
-                Your file has been uploaded successfully.
-              </p>
+            </div>
+            <div className="w-full divide-y rounded-lg border bg-slate-50">
+              {successData.details.map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between px-4 py-3"
+                >
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                  <span className="text-sm font-semibold text-slate-800">
+                    {value}
+                  </span>
+                </div>
+              ))}
             </div>
             <Button className="w-full" onClick={handleClose}>
               Done

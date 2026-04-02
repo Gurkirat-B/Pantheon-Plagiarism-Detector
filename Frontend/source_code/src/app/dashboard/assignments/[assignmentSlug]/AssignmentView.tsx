@@ -19,6 +19,7 @@ import {
   Info,
   Plus,
   Download,
+  FolderOpen,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,11 +33,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingButton } from "@/components/LoadingButton";
-import { FileUploadDialog } from "@/components/FileUploadDialog";
+import { FileUploadDialog, type UploadSuccessData } from "@/components/FileUploadDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
@@ -635,6 +640,45 @@ function ReportListDialog({
   );
 }
 
+// ─── View Resources Dialog ────────────────────────────────────────────────────
+
+function ViewResourcesDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FolderOpen className="h-5 w-5 text-slate-500" />
+            Assignment Resources
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-2 space-y-3">
+          <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-slate-800">
+                Boilerplate Code
+              </p>
+              <p className="text-xs text-muted-foreground">No file uploaded</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-slate-800">Repository</p>
+              <p className="text-xs text-muted-foreground">No file uploaded</p>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Export Confirm Dialog ────────────────────────────────────────────────────
 
 function ExportConfirmDialog({
@@ -828,6 +872,7 @@ export function AssignmentView({
   >(null);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [viewResourcesOpen, setViewResourcesOpen] = useState(false);
 
   const submissions = assignment.submissions;
 
@@ -1031,20 +1076,33 @@ export function AssignmentView({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Add Resources
+                  <FolderOpen className="h-4 w-4" />
+                  Resources
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => setUploadDialogType("boilerplate")}
-                >
-                  Add boilerplate code
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setUploadDialogType("repository")}
-                >
-                  Add repository
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem
+                      onClick={() => setUploadDialogType("boilerplate")}
+                    >
+                      Add boilerplate code
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setUploadDialogType("repository")}
+                    >
+                      Add repository
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setViewResourcesOpen(true)}>
+                  <FolderOpen className="mr-2 h-4 w-4" />
+                  View resources
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1092,6 +1150,11 @@ export function AssignmentView({
         </div>
       </div>
 
+      <ViewResourcesDialog
+        open={viewResourcesOpen}
+        onClose={() => setViewResourcesOpen(false)}
+      />
+
       <ExportConfirmDialog
         open={exportConfirmOpen}
         onClose={() => setExportConfirmOpen(false)}
@@ -1127,19 +1190,23 @@ export function AssignmentView({
         onClose={() => setUploadDialogType(null)}
         title="Add Boilerplate Code"
         description="Upload a zip file containing the boilerplate code for this assignment."
-        onUpload={async (file) => {
+        onUpload={async (file): Promise<UploadSuccessData> => {
           const body = new FormData();
           body.append("file", file);
           const res = await fetch(
-            `/api/assignments/${assignment.assignment_id}/boilerplate`,
+            `/api/submissions/boilerplate/${assignment.assignment_id}`,
             { method: "POST", body },
           );
+          const data = await res.json().catch(() => ({}));
           if (!res.ok) {
-            const result = await res.json().catch(() => ({}));
-            throw new Error(
-              result.message ?? "Upload failed. Please try again.",
-            );
+            throw new Error(data.message ?? "Upload failed. Please try again.");
           }
+          return {
+            details: [
+              { label: "File", value: data.name ?? file.name },
+              { label: "Size", value: formatBytes(data.size_bytes ?? file.size) },
+            ],
+          };
         }}
       />
 
@@ -1148,19 +1215,25 @@ export function AssignmentView({
         onClose={() => setUploadDialogType(null)}
         title="Add Repository"
         description="Upload a zip file containing the reference repository for this assignment."
-        onUpload={async (file) => {
+        onUpload={async (file): Promise<UploadSuccessData> => {
           const body = new FormData();
           body.append("file", file);
           const res = await fetch(
-            `/api/assignments/${assignment.assignment_id}/repository`,
+            `/api/submissions/repo/${assignment.assignment_id}`,
             { method: "POST", body },
           );
+          const data = await res.json().catch(() => ({}));
           if (!res.ok) {
-            const result = await res.json().catch(() => ({}));
-            throw new Error(
-              result.message ?? "Upload failed. Please try again.",
-            );
+            throw new Error(data.message ?? "Upload failed. Please try again.");
           }
+          return {
+            details: [
+              {
+                label: "Files uploaded",
+                value: String(data.uploaded_count ?? 0),
+              },
+            ],
+          };
         }}
       />
     </main>
