@@ -223,6 +223,12 @@ def compare(
         stripped_sources_a = {f: strip_comments(c, lang) for f, c in original_sources_a.items()}
         stripped_sources_b = {f: strip_comments(c, lang) for f, c in original_sources_b.items()}
 
+        # Blank out import/package/#include/using lines — these are boilerplate
+        # headers that clutter the full code view without adding meaning.
+        # Lines are replaced with "" (not removed) so line numbers stay valid.
+        stripped_sources_a = {f: _blank_header_lines(c) for f, c in stripped_sources_a.items()}
+        stripped_sources_b = {f: _blank_header_lines(c) for f, c in stripped_sources_b.items()}
+
         # Build concatenated full source and per-file line offsets.
         # Evidence lines_a/b are converted from per-file to concatenated line numbers
         # so the frontend can highlight sections in a single unified code view.
@@ -516,6 +522,35 @@ def _deduplicate_evidence_1to1(evidence: list) -> list:
         b["lines_a"][0],
     ))
     return result
+
+
+def _blank_header_lines(code: str) -> str:
+    """
+    Replace import/package/#include/using namespace/extern lines with empty
+    lines, preserving line count so evidence line numbers stay valid.
+    Handles Java (import/package), C/C++ (#include/#define/#pragma/using),
+    and Python (import/from ... import).
+    """
+    import re
+    _HEADER_RE = re.compile(
+        r"^\s*("
+        r"import\b"           # Java: import foo.bar.*;  Python: import os
+        r"|package\b"         # Java: package com.example;
+        r"|from\b.+\bimport\b"  # Python: from os import path
+        r"|#\s*include\b"     # C/C++: #include <stdio.h>
+        r"|#\s*define\b"      # C/C++: #define MAX 100
+        r"|#\s*pragma\b"      # C/C++: #pragma once
+        r"|#\s*ifndef\b"      # C/C++: #ifndef GUARD_H
+        r"|#\s*ifdef\b"       # C/C++: #ifdef DEBUG
+        r"|#\s*endif\b"       # C/C++: #endif
+        r"|using\s+namespace\b"  # C++: using namespace std;
+        r"|using\b.+;"        # C++: using std::cout;
+        r"|extern\s+\"C\""    # C/C++: extern "C" {
+        r")"
+    )
+    lines = code.splitlines()
+    result = ["" if _HEADER_RE.match(line) else line for line in lines]
+    return "\n".join(result)
 
 
 def _build_full_source(original_sources: dict) -> tuple:
