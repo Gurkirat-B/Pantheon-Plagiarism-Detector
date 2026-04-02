@@ -24,9 +24,10 @@ from engine.exceptions import (
 
 # all file types the engine can process
 ALLOWED_EXTS = {
-    ".java", ".c", ".cpp", ".cc", ".cxx",
-    ".h", ".hpp", ".hxx",
-    ".py", ".js", ".ts", ".cs", ".go", ".rs", ".rb",
+    ".java",                    # Java
+    ".c", ".h",                 # C source + headers
+    ".cpp", ".cc", ".cxx",      # C++ source
+    ".hpp", ".hxx",             # C++ headers
 }
 
 # hard limits
