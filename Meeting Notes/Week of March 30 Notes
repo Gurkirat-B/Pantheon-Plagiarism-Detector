@@ -3,6 +3,8 @@ March 30, 2026
 General
   - Booked the following week's meeting
   - Went over the Project stage 3 document
+  - Booked final presentation date
+  - Continued marking off the list for things to do
 
 
 - Engine
@@ -11,7 +13,7 @@ General
   - Work on the template provided by prof strip that DONE
   - work on multiple submissions within the .ZIP file DONE
   - Strip student name and email from every submission DONE
-  - Working on line colour choices 
+  - Working on line colour choices DONE
 
 
 Backend
@@ -25,7 +27,10 @@ Backend
   - Add api for course change names DONE
   - Remove assignments/course/{course_id} api DONE
   - fix the language selector so it works DONE
-  - Add api to get course detail like course name, assignment, and prof name
+  - Add api to get course detail like course name, assignment, and prof name DOWN
+  - Add api to download repo to our computer DOWN
+  - Add api to get name names of the boiler plate code and repo
+  - Add api to change email / password / delete account
 
 
 UI
@@ -33,11 +38,12 @@ UI
   - Cleaning 
   - Testing all links DONE
   - Working on line colour choices
-  - Add a button to switch the view to ascending order LOW PRIORITY
-  - Adding Compare with button to compare with the repo and the corresponding screens
-  - Add boilerplate button 
-  - Made mock-up for boilerplate button
-  - Made mock-up for compare with repo and import repo buttons
+  - Adding Compare with button to compare with the repo and the corresponding screens DONE
+  - Add boilerplate button DONE
+  - Made mock-up for boilerplate button DONE
+  - Made mock-up for compare with repo and import repo buttons DONE
+  - Made UI mock-up for the download repo to computer button
+  - Add help UI button which would show a pop up video on how to use the software MAYBE
 
 
 Meeting with Dave
