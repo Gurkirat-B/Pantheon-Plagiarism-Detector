@@ -120,27 +120,35 @@ function getLevelBg(level: string) {
   }
 }
 
-// Score is 0–100 (from similarityScore field)
-function getScoreSeverity(score: number): {
+function getLevelCardClass(level: string): {
   label: string;
   className: string;
 } {
-  if (score >= 80)
-    return {
-      label: "HIGH",
-      className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
-    };
-  if (score >= 50)
-    return {
-      label: "MEDIUM",
-      className:
-        "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
-    };
-  return {
-    label: "LOW",
-    className:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-  };
+  switch (level) {
+    case "CRITICAL":
+      return {
+        label: "CRITICAL",
+        className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
+      };
+    case "HIGH":
+      return {
+        label: "HIGH",
+        className:
+          "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100",
+      };
+    case "MEDIUM":
+      return {
+        label: "MEDIUM",
+        className:
+          "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
+      };
+    default:
+      return {
+        label: "LOW",
+        className:
+          "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+      };
+  }
 }
 
 // ─── Inline comment splitter ──────────────────────────────────────────────────
@@ -279,7 +287,8 @@ function FullCodePanel({
           <tbody>
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
-              const severity = highlightMap.get(lineNum);
+              const severity =
+                line.trim() === "" ? undefined : highlightMap.get(lineNum);
               const { code: codePart, comment } = severity
                 ? splitInlineComment(line, language)
                 : { code: line, comment: null };
@@ -391,13 +400,17 @@ function ComparisonDialog({
 
   if (!report) return null;
 
-  const fileNameA = Object.keys(report.fileOffsetsA)[0] ?? "Submission A";
-  const fileNameB = Object.keys(report.fileOffsetsB)[0] ?? "Submission B";
+  const filesA = Object.keys(report.fileOffsetsA);
+  const filesB = Object.keys(report.fileOffsetsB);
+  const fileNameA =
+    filesA.length === 1 ? filesA[0] : `${filesA.length} files`;
+  const fileNameB =
+    filesB.length === 1 ? filesB[0] : `${filesB.length} files`;
   const fullCodeA = report.fullCodeA;
   const fullCodeB = report.fullCodeB;
 
-  const highlightMapA = buildHighlightMap(report.matches, fileNameA, "A");
-  const highlightMapB = buildHighlightMap(report.matches, fileNameB, "B");
+  const highlightMapA = buildHighlightMap(report.matches, "A");
+  const highlightMapB = buildHighlightMap(report.matches, "B");
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -577,8 +590,7 @@ function ReportListDialog({
                 sr.submissionA === submission.submission_id
                   ? sr.submissionB
                   : sr.submissionA;
-              // similarityScore is already 0–100
-              const sev = getScoreSeverity(sr.similarityScore);
+              const sev = getLevelCardClass(sr.similarityLevel);
               const reportKey = `${sr.submissionA}_${sr.submissionB}`;
 
               return (

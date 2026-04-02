@@ -64,8 +64,8 @@ export type RawMatch = {
   fileA: string;
   fileB: string;
   index: number;
-  linesA: string;
-  linesB: string;
+  linesA: number[];
+  linesB: number[];
   severity: string;
   lineHighlightsA: number[];
   lineHighlightsB: number[];

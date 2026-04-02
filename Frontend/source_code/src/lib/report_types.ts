@@ -36,7 +36,52 @@ export type ComparisonReport = {
 
 // ─── Map JSON response → ComparisonReport ────────────────────────────────────
 
+function expandLineRange(range: number[]): number[] {
+  if (!Array.isArray(range) || range.length < 2) return [];
+  const [start, end] = range;
+  const result: number[] = [];
+  for (let i = start; i <= end; i++) result.push(i);
+  return result;
+}
+
+function formatLineRange(range: number[]): string {
+  if (!Array.isArray(range) || range.length === 0) return "";
+  if (range.length === 1) return String(range[0]);
+  return `${range[0]}–${range[range.length - 1]}`;
+}
+
+type RawMatchInput = {
+  codeA?: unknown;
+  codeB?: unknown;
+  fileA?: unknown;
+  fileB?: unknown;
+  index?: unknown;
+  linesA?: unknown;
+  linesB?: unknown;
+  severity?: unknown;
+};
+
+function mapMatch(raw: RawMatchInput, idx: number): CodeMatch {
+  const linesA = Array.isArray(raw.linesA) ? (raw.linesA as number[]) : [];
+  const linesB = Array.isArray(raw.linesB) ? (raw.linesB as number[]) : [];
+  return {
+    index: Number(raw.index ?? idx),
+    severity: (raw.severity as MatchSeverity) ?? "LOW",
+    fileA: String(raw.fileA ?? ""),
+    linesA: formatLineRange(linesA),
+    lineHighlightsA: expandLineRange(linesA),
+    fileB: String(raw.fileB ?? ""),
+    linesB: formatLineRange(linesB),
+    lineHighlightsB: expandLineRange(linesB),
+    codeA: String(raw.codeA ?? ""),
+    codeB: String(raw.codeB ?? ""),
+  };
+}
+
 export function mapReport(json: Record<string, unknown>): ComparisonReport {
+  const rawMatches = Array.isArray(json.matches)
+    ? (json.matches as RawMatchInput[])
+    : [];
   return {
     submissionA: String(json.submissionA ?? ""),
     submissionB: String(json.submissionB ?? ""),
@@ -50,7 +95,7 @@ export function mapReport(json: Record<string, unknown>): ComparisonReport {
     highCount: Number(json.High ?? 0),
     mediumCount: Number(json.Medium ?? 0),
     lowCount: Number(json.Low ?? 0),
-    matches: Array.isArray(json.matches) ? (json.matches as CodeMatch[]) : [],
+    matches: rawMatches.map((m, i) => mapMatch(m, i + 1)),
     fullCodeA: String(json.fullCodeA ?? ""),
     fullCodeB: String(json.fullCodeB ?? ""),
     fileOffsetsA: (json.fileOffsetsA as Record<string, number>) ?? {},
@@ -67,21 +112,18 @@ export type HighlightRange = {
   severity: MatchSeverity;
 };
 
-// Build a map of line number → highlight severity for a given file in fullCode
-// side: "A" or "B"
+// Build a map of line number → highlight severity.
+// Line numbers in lineHighlightsA/B are absolute positions in the concatenated
+// fullCodeA/B string, so all matches are applied regardless of filename.
 export function buildHighlightMap(
   matches: CodeMatch[],
-  fileName: string,
   side: "A" | "B",
 ): Map<number, MatchSeverity> {
   const map = new Map<number, MatchSeverity>();
 
   for (const match of matches) {
-    const file = side === "A" ? match.fileA : match.fileB;
     const highlights =
       side === "A" ? match.lineHighlightsA : match.lineHighlightsB;
-
-    if (file !== fileName) continue;
 
     for (const lineNum of highlights) {
       const existing = map.get(lineNum);
