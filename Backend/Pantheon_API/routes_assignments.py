@@ -105,6 +105,31 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
         "message": "Assignment created successfully"
     }
 
+@router.get("/{assignment_id}/student")
+def get_assignment_student(assignment_id: UUID):
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT a.title, c.name AS course_name, u.name AS professor_name
+            FROM assignments a
+            JOIN courses c ON a.course_id = c.course_id
+            JOIN enrollments e ON e.course_id = c.course_id
+            JOIN users u ON e.user_id = u.user_id
+            WHERE a.assignment_id = %s AND u.role = 'professor'
+            """,
+            (str(assignment_id),)
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Assignment not found")
+
+    return {
+        "title": row[0],
+        "course_name": row[1],
+        "professor_name": row[2],
+    }
+
+
 @router.get("/{assignment_id}")
 def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
     _require_professor(user)

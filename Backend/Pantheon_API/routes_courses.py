@@ -102,11 +102,9 @@ def get_course(course_id: UUID, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         course = conn.execute(
             """
-            SELECT c.course_id, c.code, c.name, u.name AS professor_name
-            FROM courses c
-            JOIN enrollments e ON c.course_id = e.course_id
-            JOIN users u ON e.user_id = u.user_id
-            WHERE c.course_id = %s AND u.role = 'professor'
+            SELECT course_id, code, name
+            FROM courses
+            WHERE course_id = %s
             """,
             (str(course_id),)
         ).fetchone()
@@ -128,7 +126,6 @@ def get_course(course_id: UUID, user: dict = Depends(get_current_user)):
         "course_id": str(course[0]),
         "code": course[1],
         "name": course[2],
-        "professor_name": course[3],
         "assignments": [
             {
                 "assignment_id": str(a[0]),
