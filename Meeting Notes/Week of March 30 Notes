@@ -6,16 +6,16 @@ General
 
 
 - Engine
-  - Fine-tune the similarity metrics 
-  - Removing cross-code comparisons
-  - Work on the template provided by prof strip that 
+  - Fine-tune the similarity metrics DONE 
+  - Removing cross-code comparisons DONE
+  - Work on the template provided by prof strip that DONE
   - work on multiple submissions within the .ZIP file DONE
-  - Strip student name and email from every submission LOW PRIORITY 
-  - Working on line colour choices
+  - Strip student name and email from every submission DONE
+  - Working on line colour choices 
 
 
 Backend
-  - Boiler plate code 
+  - Boiler plate code DONE
   - Proffessor repo comparissons DONE
   - Cleaning 
   - Security 
