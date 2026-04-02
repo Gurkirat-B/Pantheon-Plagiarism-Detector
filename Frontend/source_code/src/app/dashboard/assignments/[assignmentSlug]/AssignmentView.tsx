@@ -17,6 +17,7 @@ import {
   FileCode,
   Play,
   Info,
+  Plus,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingButton } from "@/components/LoadingButton";
+import { FileUploadDialog } from "@/components/FileUploadDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 
 import type {
@@ -372,10 +380,12 @@ function ComparisonDialog({
   open,
   onClose,
   report,
+  emailById,
 }: {
   open: boolean;
   onClose: () => void;
   report: ComparisonReport | null;
+  emailById: Map<string, string>;
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>("blocks");
 
@@ -399,7 +409,9 @@ function ComparisonDialog({
                 Plagiarism Detection Report
               </DialogTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                {report.submissionA} vs {report.submissionB} · {report.language}
+                {emailById.get(report.submissionA) ?? report.submissionA} vs{" "}
+                {emailById.get(report.submissionB) ?? report.submissionB} ·{" "}
+                {report.language}
               </p>
             </div>
 
@@ -500,14 +512,14 @@ function ComparisonDialog({
               </p>
               <div className="flex gap-3" style={{ minHeight: "500px" }}>
                 <FullCodePanel
-                  label="Submission A"
+                  label={emailById.get(report.submissionA) ?? "Submission A"}
                   fileName={fileNameA}
                   code={fullCodeA}
                   highlightMap={highlightMapA}
                   language={report.language}
                 />
                 <FullCodePanel
-                  label="Submission B"
+                  label={emailById.get(report.submissionB) ?? "Submission B"}
                   fileName={fileNameB}
                   code={fullCodeB}
                   highlightMap={highlightMapB}
@@ -529,12 +541,14 @@ function ReportListDialog({
   onClose,
   submission,
   reports,
+  emailById,
   onOpenReport,
 }: {
   open: boolean;
   onClose: () => void;
   submission: Submission | null;
   reports: SimilarityReport[];
+  emailById: Map<string, string>;
   onOpenReport: (sr: SimilarityReport) => void;
 }) {
   if (!submission) return null;
@@ -587,7 +601,7 @@ function ReportListDialog({
                         </Badge>
                       </div>
                       <p className="font-mono text-xs text-muted-foreground">
-                        vs {otherId}
+                        vs {emailById.get(otherId) ?? otherId}
                       </p>
                       <p className="text-xs capitalize text-muted-foreground">
                         {sr.language}
@@ -752,6 +766,9 @@ export function AssignmentView({
   const [compareAllResult, setCompareAllResult] = useState<{
     totalPairs: number;
   } | null>(null);
+  const [uploadDialogType, setUploadDialogType] = useState<
+    "boilerplate" | "repository" | null
+  >(null);
 
   const submissions = assignment.submissions;
 
@@ -810,6 +827,8 @@ export function AssignmentView({
     setDetailSubmission(null);
     setDialogOpen(true);
   };
+
+  const emailById = new Map(submissions.map((s) => [s.submission_id, s.email]));
 
   const submissionsWithReports = new Set(
     reports.flatMap((r) => [r.submissionA, r.submissionB]),
@@ -919,15 +938,37 @@ export function AssignmentView({
             </p>
           </div>
 
-          <LoadingButton
-            onClick={handleCompareAll}
-            loading={comparingAll}
-            disabled={submissions.length < 2}
-            className="gap-2"
-          >
-            <Play className="h-4 w-4" />
-            {comparingAll ? "Analysing..." : "Compare All"}
-          </LoadingButton>
+          <div className="flex gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Resources
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => setUploadDialogType("boilerplate")}
+                >
+                  Add boilerplate code
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setUploadDialogType("repository")}
+                >
+                  Add repository
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <LoadingButton
+              onClick={handleCompareAll}
+              loading={comparingAll}
+              disabled={submissions.length < 2}
+              className="gap-2"
+            >
+              <Play className="h-4 w-4" />
+              {comparingAll ? "Analysing..." : "Compare All"}
+            </LoadingButton>
+          </div>
         </div>
 
         <Separator />
@@ -958,6 +999,7 @@ export function AssignmentView({
         onClose={() => setDetailSubmission(null)}
         submission={detailSubmission}
         reports={reports}
+        emailById={emailById}
         onOpenReport={handleOpenReport}
       />
 
@@ -965,12 +1007,55 @@ export function AssignmentView({
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         report={report}
+        emailById={emailById}
       />
 
       <CompareAllSuccessDialog
         open={successDialogOpen}
         onClose={() => setSuccessDialogOpen(false)}
         totalPairs={compareAllResult?.totalPairs ?? 0}
+      />
+
+      <FileUploadDialog
+        open={uploadDialogType === "boilerplate"}
+        onClose={() => setUploadDialogType(null)}
+        title="Add Boilerplate Code"
+        description="Upload a zip file containing the boilerplate code for this assignment."
+        onUpload={async (file) => {
+          const body = new FormData();
+          body.append("file", file);
+          const res = await fetch(
+            `/api/assignments/${assignment.assignment_id}/boilerplate`,
+            { method: "POST", body },
+          );
+          if (!res.ok) {
+            const result = await res.json().catch(() => ({}));
+            throw new Error(
+              result.message ?? "Upload failed. Please try again.",
+            );
+          }
+        }}
+      />
+
+      <FileUploadDialog
+        open={uploadDialogType === "repository"}
+        onClose={() => setUploadDialogType(null)}
+        title="Add Repository"
+        description="Upload a zip file containing the reference repository for this assignment."
+        onUpload={async (file) => {
+          const body = new FormData();
+          body.append("file", file);
+          const res = await fetch(
+            `/api/assignments/${assignment.assignment_id}/repository`,
+            { method: "POST", body },
+          );
+          if (!res.ok) {
+            const result = await res.json().catch(() => ({}));
+            throw new Error(
+              result.message ?? "Upload failed. Please try again.",
+            );
+          }
+        }}
       />
     </main>
   );
