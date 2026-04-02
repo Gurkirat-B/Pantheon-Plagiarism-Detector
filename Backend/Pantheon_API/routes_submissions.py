@@ -312,12 +312,12 @@ def export_submissions(
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT s.submission_id, s.user_id, s.original_zip_name, s.submitted_at,
-                   a.s3_bucket, a.s3_key
+            SELECT u.email, a.s3_bucket, a.s3_key
             FROM submissions s
             JOIN artifacts a ON a.artifact_id = s.artifact_id
+            JOIN users u ON u.user_id = s.user_id
             WHERE s.assignment_id = %s
-            ORDER BY s.submitted_at DESC
+            ORDER BY u.email ASC
             """,
             (str(assignment_id),),
         ).fetchall()
@@ -325,19 +325,17 @@ def export_submissions(
     if not rows:
         raise HTTPException(status_code=404, detail="No submissions found for this assignment")
 
-    # Build an in-memory zip containing all submission zips
+    # Build an in-memory zip containing all submission zips, named by student email
     bundle_buf = io.BytesIO()
     with zipfile.ZipFile(bundle_buf, mode="w", compression=zipfile.ZIP_STORED) as bundle:
-        for _, user_id, original_zip_name, _, bucket, key in rows:
+        for email, bucket, key in rows:
             try:
                 obj = s3.get_object(Bucket=bucket, Key=key)
                 file_bytes = obj["Body"].read()
             except ClientError as e:
                 raise HTTPException(status_code=502, detail=f"Failed to fetch submission from S3: {e}")
 
-            # Name each entry by user_id so filenames are unique
-            entry_name = f"{user_id}/{original_zip_name or key.split('/')[-1]}"
-            bundle.writestr(entry_name, file_bytes)
+            bundle.writestr(f"{email}.zip", file_bytes)
 
     bundle_bytes = bundle_buf.getvalue()
     export_key = f"exports/{assignment_id}/submissions_export.zip"
