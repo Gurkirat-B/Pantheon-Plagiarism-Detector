@@ -605,7 +605,7 @@ def get_similarity_score(
         rows = conn.execute(
             """
             SELECT DISTINCT ON (LEAST(sr.left_submission_id, sr.right_submission_id), GREATEST(sr.left_submission_id, sr.right_submission_id))
-                sr.score, sr.left_submission_id, sr.right_submission_id
+                sr.score, sr.left_submission_id, sr.right_submission_id, sr.prof_comparison
             FROM similarity_results sr
             WHERE sr.left_submission_id = %s::uuid
                OR sr.right_submission_id = %s::uuid
@@ -619,13 +619,14 @@ def get_similarity_score(
 
     results = []
     for row in rows:
-        left_id = str(row[1])
-        right_id = str(row[2])
+        left_id = str(row[1]) if row[1] else None
+        right_id = str(row[2]) if row[2] else None
         other_submission_id = right_id if left_id == str(submission_id) else left_id
         results.append({
             "submission_id": str(submission_id),
             "other_submission_id": other_submission_id,
             "score": float(row[0]),
+            "prof_comparison": row[3],
         })
 
     return results
