@@ -172,9 +172,10 @@ def build_evidence(
     # collect raw match pairs: (a_start_token, a_end_token, b_start_token, b_end_token)
     raw: List[Tuple[int, int, int, int]] = []
     for h in shared:
-        # use all occurrences, not just first - catches multiple copies
-        for ia in fp_a[h]:
-            for ib in fp_b[h]:
+        # cap positions per hash to prevent O(n²) explosion on adversarial
+        # inputs with thousands of identical repeated k-grams
+        for ia in fp_a[h][:50]:
+            for ib in fp_b[h][:50]:
                 ia_end = min(ia + k - 1, len(tok_a) - 1)
                 ib_end = min(ib + k - 1, len(tok_b) - 1)
                 raw.append((ia, ia_end, ib, ib_end))
