@@ -596,43 +596,8 @@ def compare_repo(
         raise HTTPException(status_code=500, detail=f"Repo comparison failed: {e}")
 
 
-@router.get("/similarity-score")
-def get_similarity_score(
-    submission_id: UUID,
-    user: dict = Depends(get_current_user),
-):
-    with get_db_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT ON (LEAST(sr.left_submission_id, sr.right_submission_id), GREATEST(sr.left_submission_id, sr.right_submission_id))
-                sr.score, sr.left_submission_id, sr.right_submission_id, sr.prof_comparison
-            FROM similarity_results sr
-            WHERE sr.left_submission_id = %s::uuid
-               OR sr.right_submission_id = %s::uuid
-            ORDER BY LEAST(sr.left_submission_id, sr.right_submission_id), GREATEST(sr.left_submission_id, sr.right_submission_id), sr.created_at DESC
-            """,
-            (str(submission_id), str(submission_id)),
-        ).fetchall()
-
-    if not rows:
-        raise HTTPException(status_code=404, detail="No similarity results found for the specified submission ID")
-
-    results = []
-    for row in rows:
-        left_id = str(row[1]) if row[1] else None
-        right_id = str(row[2]) if row[2] else None
-        other_submission_id = right_id if left_id == str(submission_id) else left_id
-        results.append({
-            "submission_id": str(submission_id),
-            "other_submission_id": other_submission_id,
-            "score": float(row[0]),
-            "prof_comparison": row[3],
-        })
-
-    return results
-
-@router.get("/similarity-report")
-def get_similarity_report(
+@router.get("/similarity-report-student")
+def get_similarity_report_student(
     submission_id: UUID,
     user: dict = Depends(get_current_user),
 ):
@@ -645,14 +610,40 @@ def get_similarity_report(
                 se.evidence_json
             FROM similarity_results sr
             JOIN similarity_evidence se ON se.result_id = sr.result_id
-            WHERE sr.left_submission_id = %s::uuid
-               OR sr.right_submission_id = %s::uuid
+            WHERE sr.prof_comparison = FALSE
+              AND (sr.left_submission_id = %s::uuid OR sr.right_submission_id = %s::uuid)
             ORDER BY LEAST(sr.left_submission_id, sr.right_submission_id), GREATEST(sr.left_submission_id, sr.right_submission_id), sr.created_at DESC, se.created_at DESC
             """,
             (str(submission_id), str(submission_id)),
         ).fetchall()
 
     if not rows:
-        raise HTTPException(status_code=404, detail="No similarity reports found for the specified submission ID")
+        raise HTTPException(status_code=404, detail="No student similarity reports found for the specified submission ID")
+
+    return [row[0] for row in rows]
+
+@router.get("/similarity-report-repo")
+def get_similarity_report_repo(
+    submission_id: UUID,
+    user: dict = Depends(get_current_user),
+):
+    _require_professor(user)
+
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ON (sr.left_upload_id, sr.right_submission_id)
+                se.evidence_json
+            FROM similarity_results sr
+            JOIN similarity_evidence se ON se.result_id = sr.result_id
+            WHERE sr.prof_comparison = TRUE
+              AND sr.right_submission_id = %s::uuid
+            ORDER BY sr.left_upload_id, sr.right_submission_id, sr.created_at DESC, se.created_at DESC
+            """,
+            (str(submission_id),),
+        ).fetchall()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="No repo similarity reports found for the specified submission ID")
 
     return [row[0] for row in rows]
