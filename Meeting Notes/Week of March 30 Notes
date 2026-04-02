@@ -6,16 +6,16 @@ General
 
 
 - Engine
-  - Fine-tune the similarity metrics 
-  - Removing cross-code comparisons
-  - Work on the template provided by prof strip that 
+  - Fine-tune the similarity metrics DONE 
+  - Removing cross-code comparisons DONE
+  - Work on the template provided by prof strip that DONE
   - work on multiple submissions within the .ZIP file DONE
-  - Strip student name and email from every submission LOW PRIORITY 
-  - Working on line colour choices
+  - Strip student name and email from every submission DONE
+  - Working on line colour choices 
 
 
 Backend
-  - Boiler plate code 
+  - Boiler plate code DONE
   - Proffessor repo comparissons DONE
   - Cleaning 
   - Security 
@@ -34,8 +34,10 @@ UI
   - Testing all links DONE
   - Working on line colour choices
   - Add a button to switch the view to ascending order LOW PRIORITY
-  - Adding Compare with button to compare with the repo and according screens
+  - Adding Compare with button to compare with the repo and the corresponding screens
   - Add boilerplate button 
+  - Made mock-up for boilerplate button
+  - Made mock-up for compare with repo and import repo buttons
 
 
 Meeting with Dave
