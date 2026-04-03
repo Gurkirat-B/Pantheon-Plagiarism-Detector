@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const batches = await Promise.all(
       submissionIds.map(async (id) => {
         const res = await fetch(
-          `${process.env.BACKEND_URL}/engine/similarity-report?submission_id=${id}`,
+          `${process.env.BACKEND_URL}/engine/similarity-report-student?submission_id=${id}`,
           {
             headers: {
               Accept: "application/json",

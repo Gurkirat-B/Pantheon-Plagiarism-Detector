@@ -25,28 +25,9 @@ import {
 } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { LoadingButton } from "./LoadingButton";
+import { zipHasValidSource } from "@/lib/zip-utils";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-
-const SOURCE_EXTENSIONS = [".java", ".cpp", ".c", ".h"];
-
-async function zipHasValidSource(zip: JSZip, depth = 0): Promise<boolean> {
-  if (depth > 10) return false;
-  for (const [name, entry] of Object.entries(zip.files)) {
-    if (entry.dir) continue;
-    if (SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext))) return true;
-    if (name.endsWith(".zip")) {
-      try {
-        const buf = await entry.async("arraybuffer");
-        const nested = await JSZip.loadAsync(buf);
-        if (await zipHasValidSource(nested, depth + 1)) return true;
-      } catch {
-        // skip unreadable nested zip
-      }
-    }
-  }
-  return false;
-}
 
 export type UploadSuccessData = {
   details: Array<{ label: string; value: string }>;

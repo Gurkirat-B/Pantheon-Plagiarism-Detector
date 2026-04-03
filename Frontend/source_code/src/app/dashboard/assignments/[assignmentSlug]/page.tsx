@@ -35,7 +35,7 @@ export type CourseInfo = {
   name: string;
 };
 
-// Matches the actual API response shape from GET /engine/similarity-report?submission_id=
+// Matches the actual API response shape from GET /engine/similarity-report-student?submission_id=
 export type SimilarityReport = {
   // Submission identifiers (camelCase as returned by API)
   submissionA: string;
@@ -121,7 +121,7 @@ async function getReports(
   const batches = await Promise.all(
     withComparisons.map(async (s) => {
       const res = await fetch(
-        `${process.env.BACKEND_URL}/engine/similarity-report?submission_id=${s.submission_id}`,
+        `${process.env.BACKEND_URL}/engine/similarity-report-student?submission_id=${s.submission_id}`,
         {
           headers: {
             Accept: "application/json",

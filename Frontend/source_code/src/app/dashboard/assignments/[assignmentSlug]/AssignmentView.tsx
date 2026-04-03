@@ -22,6 +22,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -309,7 +310,7 @@ function FullCodePanel({
                 <tr
                   key={lineNum}
                   data-line={lineNum}
-                  className={`leading-relaxed${blockIndex !== undefined ? " cursor-pointer" : ""}`}
+                  className={cn("leading-relaxed", blockIndex !== undefined && "cursor-pointer")}
                   onClick={
                     blockIndex !== undefined
                       ? () => onHighlightClick?.(blockIndex)
@@ -434,22 +435,13 @@ function ComparisonDialog({
   const lineToBlockMapA = buildLineToBlockMap(report.matches, "A");
   const lineToBlockMapB = buildLineToBlockMap(report.matches, "B");
 
-  const blockToHighlightsA = new Map<number, number[]>(
-    report.matches.map((m, i) => [i, m.lineHighlightsA]),
-  );
-  const blockToHighlightsB = new Map<number, number[]>(
-    report.matches.map((m, i) => [i, m.lineHighlightsB]),
-  );
-
   const scrollToBlock = (
-    blockIndex: number,
-    blockToHighlights: Map<number, number[]>,
+    highlights: number[],
     containerRef: RefObject<HTMLDivElement>,
   ) => {
-    const lines = blockToHighlights.get(blockIndex);
-    if (!lines || lines.length === 0) return;
+    if (highlights.length === 0) return;
     const el = containerRef.current?.querySelector(
-      `[data-line="${lines[0]}"]`,
+      `[data-line="${highlights[0]}"]`,
     );
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
@@ -571,7 +563,7 @@ function ComparisonDialog({
                   language={report.language}
                   scrollContainerRef={scrollRefA}
                   onHighlightClick={(bi) =>
-                    scrollToBlock(bi, blockToHighlightsB, scrollRefB)
+                    scrollToBlock(report.matches[bi]?.lineHighlightsB ?? [], scrollRefB)
                   }
                 />
                 <FullCodePanel
@@ -582,7 +574,7 @@ function ComparisonDialog({
                   language={report.language}
                   scrollContainerRef={scrollRefB}
                   onHighlightClick={(bi) =>
-                    scrollToBlock(bi, blockToHighlightsA, scrollRefA)
+                    scrollToBlock(report.matches[bi]?.lineHighlightsA ?? [], scrollRefA)
                   }
                 />
               </div>
@@ -917,7 +909,7 @@ export function AssignmentView({
   const refreshReports = async () => {
     const ids = submissions.map((s) => s.submission_id).join(",");
     const res = await fetch(
-      `/api/engine/similarity-report?submission_ids=${ids}`,
+      `/api/engine/similarity-report-student?submission_ids=${ids}`,
     );
 
     if (res.status === 401) {
