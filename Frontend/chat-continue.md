@@ -2,179 +2,168 @@
 
 ## 1. Primary Request and Intent
 
-The conversation covers a series of incremental UI improvements to the `AssignmentView.tsx` component of a plagiarism detection dashboard. Requests in order:
+Incremental UI improvements to the plagiarism detection dashboard (`AssignmentView.tsx`) and related components. Session covered:
 
-- Add "Compared/Not compared" badges to submission cards, reactive to live reports state
-- Add a "High Risk" badge (similarityScore ≥ 80%) to submission cards
-- Remove the "Accepted" status badge and all related code
-- Disable the "Compare All" button when there are fewer than 2 submissions
-- Remove all `flaggedPairs` code since the Compare All API no longer returns `flagged_pairs`
-- Update type definitions and parser (`mapReport`) for a new similarity report API response shape where `fullCodeA`/`fullCodeB` are now flat strings and new fields `fileOffsetsA`, `fileOffsetsB`, `identicalSubmissions` were added
-- Replace submission UUIDs with submitter emails in report list dialog, comparison dialog header, and full-code panel labels
-- Add an "Add Resources" button next to "Compare All" that shows a dropdown with "Add boilerplate code" and "Add repository" options, each opening a file upload dialog with inline error handling and inline success state
-- Rework full-code highlight logic: stop using `lineHighlightsA/B` (now always `[]` from API) and instead expand `linesA`/`linesB` (`[start, end]` tuples) into full line ranges
-- Fix report list dialog color/label scheme to match side-by-side view (use backend's `similarityLevel` field instead of score-derived thresholds)
-- Skip highlighting blank lines in the full code view
+- Add "Compare" dropdown replacing the "Compare All" button — two options: "Current submissions" (calls `/compare-all`) and "With repository" (calls `/compare-repo`)
+- `ReportListDialog` upgraded: tab toggle (Current Submissions / With Repository), smart default tab (auto-selects whichever tab has results), repo report cards show filename instead of unknown ID
+- Overflow fix: report list in dialog now has `max-h-[60vh] overflow-y-auto`
+- `ViewResourcesDialog` connected to boilerplate GET API — fetched server-side on page load, passed as `initialBoilerplateFilename`, updated in state after successful upload (no per-open fetches)
+- Simplify pass: replaced `useEffect` tab default (caused flicker + duplicate array scans) with synchronous state-reset-on-prop-change pattern
 
 ---
 
 ## 2. Key Technical Concepts
 
-- React state-derived sets for reactive badge computation (`submissionsWithReports`, `submissionsHighRisk`)
-- shadcn/ui components: `Badge`, `Dialog`, `DropdownMenu`, `Button`, `Form`, `LoadingButton`
-- Zod form validation with `react-hook-form` and `zodResolver`
-- react-dropzone for file drag-and-drop
-- JSZip for client-side zip file content validation
-- TypeScript discriminated union state (`"boilerplate" | "repository" | null`)
-- `Map<string, string>` for O(1) submission ID → email lookup passed as prop
-- Separation of concerns: `onUpload(file)` callback pattern keeps API logic in the caller
-- Next.js App Router, client components (`"use client"`)
+- React: synchronous state reset during render (`if (currentId !== prevId) { setPrevId(currentId); setManualTab(null); }`) to avoid post-render flicker when props change — replaces `useEffect` + `setState` pattern
+- `manualTab: "current" | "repo" | null` — null means "use computed default"; set explicitly by user click
+- Derived tab default: compute `studentMatching`/`repoMatching` once via `.filter()`, derive default from lengths — eliminates duplicate `.some()` scans in removed `useEffect`
+- `successDialogType: "current" | "repo" | null` — null/non-null doubles as open/closed signal; value drives title/description of reused `CompareAllSuccessDialog`
+- Next.js App Router: server-side fetch in `page.tsx` `Promise.all`, result passed as prop to client component, state initialized from prop (one-time, intentionally decoupled after mount)
 
 ---
 
 ## 3. Files and Code Sections
 
-### `Frontend/source_code/src/app/dashboard/assignments/[assignmentSlug]/AssignmentView.tsx`
+### `src/app/dashboard/assignments/[assignmentSlug]/AssignmentView.tsx`
 
-Main file modified across all tasks. Key cumulative changes:
-
-- `SubmissionRow` receives `hasReports: boolean` and `isHighRisk: boolean` props
-- Derived sets in parent body:
-
+**New state in main component:**
 ```tsx
-const emailById = new Map(submissions.map((s) => [s.submission_id, s.email]));
-const submissionsWithReports = new Set(reports.flatMap((r) => [r.submissionA, r.submissionB]));
-const submissionsHighRisk = new Set(
-  reports.filter((r) => r.similarityScore >= 80).flatMap((r) => [r.submissionA, r.submissionB]),
-);
+const [repoReports, setRepoReports] = useState<SimilarityReport[]>([]);
+const [comparingRepo, setComparingRepo] = useState(false);
+const [successDialogType, setSuccessDialogType] = useState<"current" | "repo" | null>(null);
+const [compareResult, setCompareResult] = useState<{ totalPairs: number } | null>(null);
+const [boilerplateFilename, setBoilerplateFilename] = useState<string | null>(initialBoilerplateFilename);
 ```
 
-- `uploadDialogType` state: `"boilerplate" | "repository" | null`
-- "Add Resources" dropdown + "Compare All" button (disabled when `submissions.length < 2`)
-- Two `FileUploadDialog` instances at bottom of JSX for boilerplate and repository uploads
-- `ComparisonDialog` and `ReportListDialog` both receive `emailById` prop
-
-**ComparisonDialog — full code highlight logic (current):**
-
+**`submissionsWithReports` now includes repo reports:**
 ```tsx
-const filesA = Object.keys(report.fileOffsetsA);
-const filesB = Object.keys(report.fileOffsetsB);
-const fileNameA = filesA.length === 1 ? filesA[0] : `${filesA.length} files`;
-const fileNameB = filesB.length === 1 ? filesB[0] : `${filesB.length} files`;
-
-const highlightMapA = buildHighlightMap(report.matches, "A");
-const highlightMapB = buildHighlightMap(report.matches, "B");
+const submissionsWithReports = new Set([
+  ...reports.flatMap((r) => [r.submissionA, r.submissionB]),
+  ...repoReports.flatMap((r) => [r.submissionA, r.submissionB]),
+]);
 ```
 
-**FullCodePanel — blank line skip:**
-
+**Compare dropdown (replaces LoadingButton):**
 ```tsx
-const severity =
-  line.trim() === "" ? undefined : highlightMap.get(lineNum);
+<DropdownMenu>
+  <DropdownMenuTrigger asChild>
+    <Button disabled={comparingAll || comparingRepo || submissions.length < 2} className="gap-2">
+      {comparingAll || comparingRepo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+      {comparingAll || comparingRepo ? "Analysing..." : "Compare"}
+      <ChevronDown className="h-4 w-4" />
+    </Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent align="end">
+    <DropdownMenuItem disabled={comparingAll || comparingRepo} onClick={handleCompareAll}>
+      Current submissions
+    </DropdownMenuItem>
+    <DropdownMenuItem disabled={comparingAll || comparingRepo} onClick={handleCompareRepo}>
+      With repository
+    </DropdownMenuItem>
+  </DropdownMenuContent>
+</DropdownMenu>
 ```
 
-**Report list dialog — color classification:**
-
+**`ReportListDialog` — smart tab, no flicker:**
 ```tsx
-const sev = getLevelCardClass(sr.similarityLevel);
-```
+const [manualTab, setManualTab] = useState<"current" | "repo" | null>(null);
+const [prevSubmissionId, setPrevSubmissionId] = useState<string | null>(null);
 
-`getLevelCardClass` maps CRITICAL → red, HIGH → orange, MEDIUM → yellow, LOW/default → emerald — matching the side-by-side view's `getLevelBg`/`getLevelColor` scheme. Replaces the old `getScoreSeverity(score)` which used hardcoded score thresholds (≥80 HIGH, ≥50 MEDIUM) that diverged from the backend's classification.
-
----
-
-### `Frontend/source_code/src/app/dashboard/assignments/[assignmentSlug]/page.tsx`
-
-- `Submission` type: no `status: string` field
-- `SimilarityReport` type:
-
-```ts
-fullCodeA: string;
-fullCodeB: string;
-fileOffsetsA: Record<string, number>;
-fileOffsetsB: Record<string, number>;
-identicalSubmissions: boolean;
-```
-
-- `RawMatch` type — `linesA` and `linesB` are `number[]` (a `[start, end]` tuple), not `string`:
-
-```ts
-linesA: number[];
-linesB: number[];
-```
-
----
-
-### `Frontend/source_code/src/lib/report_types.ts`
-
-**`ComparisonReport` type:**
-
-```ts
-fullCodeA: string;
-fullCodeB: string;
-fileOffsetsA: Record<string, number>;
-fileOffsetsB: Record<string, number>;
-identicalSubmissions: boolean;
-```
-
-**`mapReport` — transforms raw matches into `CodeMatch`:**
-
-```ts
-function expandLineRange(range: number[]): number[] {
-  // [1, 10] → [1, 2, 3, ..., 10]
+// Synchronously reset on submission change — no post-render flicker
+const currentId = submission?.submission_id ?? null;
+if (currentId !== prevSubmissionId) {
+  setPrevSubmissionId(currentId);
+  setManualTab(null);
 }
 
-function formatLineRange(range: number[]): string {
-  // [1, 10] → "1–10"
-}
+if (!submission) return null;
 
-function mapMatch(raw, idx): CodeMatch {
-  const linesA = Array.isArray(raw.linesA) ? raw.linesA : [];
-  const linesB = Array.isArray(raw.linesB) ? raw.linesB : [];
-  return {
-    linesA: formatLineRange(linesA),       // display string
-    lineHighlightsA: expandLineRange(linesA), // absolute line numbers in fullCodeA
-    linesB: formatLineRange(linesB),
-    lineHighlightsB: expandLineRange(linesB),
-    ...
-  };
+// Single-pass filtering — no duplicate scans
+const studentMatching = reports.filter(r => r.submissionA === submission.submission_id || r.submissionB === submission.submission_id);
+const repoMatching = repoReports.filter(r => r.submissionA === submission.submission_id || r.submissionB === submission.submission_id);
+const defaultTab: "current" | "repo" = studentMatching.length === 0 && repoMatching.length > 0 ? "repo" : "current";
+const tab = manualTab ?? defaultTab;
+const matching = tab === "current" ? studentMatching : repoMatching;
+```
+
+**Repo report label (filename fallback):**
+```tsx
+let otherLabel: string;
+if (tab === "repo" && !emailById.has(otherId)) {
+  // otherId is repo upload — show filename, not raw ID
+  const repoFiles = otherId === sr.submissionB ? Object.keys(sr.fileOffsetsB) : Object.keys(sr.fileOffsetsA);
+  otherLabel = repoFiles.length === 1 ? repoFiles[0] : `${repoFiles.length} files`;
+} else {
+  otherLabel = emailById.get(otherId) ?? otherId;
 }
 ```
 
-**`buildHighlightMap` — no filename filtering:**
-
-```ts
-// Line numbers in lineHighlightsA/B are absolute positions in the concatenated
-// fullCodeA/B string, so all matches are applied regardless of filename.
-export function buildHighlightMap(
-  matches: CodeMatch[],
-  side: "A" | "B",
-): Map<number, MatchSeverity>
+**`CompareAllSuccessDialog` — reused with optional props:**
+```tsx
+function CompareAllSuccessDialog({ open, onClose, totalPairs, title = "Analysis Complete", description = "All submission pairs have been compared." })
+// Rendered:
+<CompareAllSuccessDialog
+  open={successDialogType !== null}
+  onClose={() => setSuccessDialogType(null)}
+  totalPairs={compareResult?.totalPairs ?? 0}
+  title={successDialogType === "repo" ? "Repository Analysis Complete" : "Analysis Complete"}
+  description={successDialogType === "repo" ? "All submission-repository pairs have been analysed." : "All submission pairs have been compared."}
+/>
 ```
 
-The filename parameter was removed. Previously it filtered `match.fileA !== fileName`, which silently dropped all matches when a submission had multiple files (e.g., `fileOffsetsA` with 6 entries) since only the first key was used and the other files' matches were skipped.
+**`ViewResourcesDialog` — pure display, no fetching:**
+```tsx
+function ViewResourcesDialog({ open, onClose, boilerplateFilename: string | null })
+// boilerplateFilename: show filename or "No file uploaded"
+// Repository: still placeholder
+```
 
 ---
 
-### `Frontend/source_code/src/components/FileUploadDialog.tsx` (new file)
+### `src/app/dashboard/assignments/[assignmentSlug]/page.tsx`
 
-- Reusable file upload dialog with dropzone, zod validation, inline errors, inline success state
-- Props: `open`, `onClose`, `title`, `description`, `onUpload: (file: File) => Promise<void>`
-- Validates zip contains `.java`, `.cpp`, or `.c` files using JSZip
-- Uses `form.setError("root", ...)` for API errors thrown by `onUpload`
-- Success state: replaces form with CheckCircle2 icon and "Done" button
+**`getBoilerplate` fetcher (new):**
+```ts
+async function getBoilerplate(token, assignmentId): Promise<string | null>
+// GET /submissions/boilerplate/{assignmentId}
+// 404 → null (no boilerplate uploaded yet)
+```
 
----
-
-## 4. Key Bug Fixes
-
-- **Full code highlight wrong for multi-file submissions**: `buildHighlightMap` filtered by `fileNameA = Object.keys(fileOffsetsA)[0]`, so only matches whose `fileA` equaled the first filename were highlighted. Removed filename filter — line numbers are absolute positions in the concatenated `fullCodeA/B`.
-- **`"full submission"` filename**: When the API returns `fileA: "full submission"` (single-file submissions), the old filter would also skip it unless the filename matched. Now irrelevant since filter is removed.
-- **Report list color mismatch**: `getScoreSeverity(score)` used frontend thresholds (≥50 = MEDIUM) that didn't match the backend's `similarityLevel`. A 41.5% score showed as LOW/green in the list but MEDIUM/yellow in the side-by-side. Fixed by using `getLevelCardClass(sr.similarityLevel)`.
-- **Blank lines highlighted**: Lines where `line.trim() === ""` were included in the expanded range and got highlighted. Fixed by skipping highlight lookup for blank lines in `FullCodePanel`.
+Called in `Promise.all` alongside `getCourse` and `getReports`. Result passed as `initialBoilerplateFilename` prop to `AssignmentView`.
 
 ---
 
-## 5. Pending Tasks
+### API Route Files
 
-- The API endpoints `/api/assignments/{assignment_id}/boilerplate` and `/api/assignments/{assignment_id}/repository` in `AssignmentView.tsx` are placeholders — need to be updated to actual backend endpoints once confirmed.
+| Route file | Method | Backend endpoint |
+|---|---|---|
+| `api/submissions/[assignmentKey]/export/route.ts` | GET | `/submissions/{id}/export` |
+| `api/submissions/boilerplate/[assignmentId]/route.ts` | GET | `/submissions/boilerplate/{id}` |
+| `api/submissions/boilerplate/[assignmentId]/route.ts` | POST | `/submissions/boilerplate/{id}` |
+| `api/submissions/repo/[assignmentId]/route.ts` | POST | `/submissions/repo/{id}` |
+| `api/engine/assignments/[assignmentId]/compare-all/route.ts` | POST | `/engine/assignments/{id}/compare-all` |
+| `api/engine/assignments/[assignmentId]/compare-repo/route.ts` | POST | `/engine/assignments/{id}/compare-repo` |
+| `api/engine/similarity-report-student/route.ts` | GET | `/engine/similarity-report-student?submission_id=` (fan-out) |
+| `api/engine/similarity-report-repo/route.ts` | GET | `/engine/similarity-report-repo?submission_id=` (fan-out) |
+
+Compare-all/compare-repo response: `{ run_id, assignment_id, total_pairs, pairs[] }` — same shape, `SimilarityReport` type reused.
+Similarity-report-student/repo response: same `SimilarityReport[]` shape — same type reused.
+Boilerplate GET response: `{ filename: string }`
+
+---
+
+## 4. Key Decisions / Non-obvious Choices
+
+- `manualTab = null` means "auto" — when user hasn't made an explicit choice, derive the tab from data. Explicit user click sets it to "current" or "repo". Resets to null on submission change (synchronous during render, no flicker).
+- Synchronous render-time state reset (`if (id !== prevId) { setPrevId(id); resetState(); }`) is the React-recommended pattern for resetting state on prop change without an `useEffect` flicker.
+- `successDialogType` null/non-null serves as the open/closed boolean — avoids a separate `successDialogOpen` boolean alongside the type.
+- `boilerplateFilename` initialized from server-side prop, updated only after upload — intentionally decoupled from prop after mount (no re-fetch risk since the only mutation goes through the upload handler in the same component).
+- Repo report cards use `fileOffsetsB` (or `fileOffsetsA`) key filenames to label the repo party — the repo upload ID is not in `emailById`, so falling back to raw ID would show a UUID.
+- Route files for `compare-repo` and `similarity-report-repo` are structurally identical to their student counterparts — no abstraction added (Next.js route handlers are one-file-per-route idiom; 2 instances don't justify a factory).
+
+---
+
+## 5. Pending / Placeholder
+
+- `ViewResourcesDialog` Repository slot still shows placeholder — no GET API available yet for repository info.
+- `refreshReports` and `refreshRepoReports` are separate functions (symmetric pattern) — could be unified into a factory if a third report type is ever added.

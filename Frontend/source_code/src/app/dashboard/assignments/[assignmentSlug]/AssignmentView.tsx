@@ -20,6 +20,7 @@ import {
   Plus,
   Download,
   FolderOpen,
+  Loader2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,7 +35,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingButton } from "@/components/LoadingButton";
-import { FileUploadDialog, type UploadSuccessData } from "@/components/FileUploadDialog";
+import {
+  FileUploadDialog,
+  type UploadSuccessData,
+} from "@/components/FileUploadDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -310,7 +314,10 @@ function FullCodePanel({
                 <tr
                   key={lineNum}
                   data-line={lineNum}
-                  className={cn("leading-relaxed", blockIndex !== undefined && "cursor-pointer")}
+                  className={cn(
+                    "leading-relaxed",
+                    blockIndex !== undefined && "cursor-pointer",
+                  )}
                   onClick={
                     blockIndex !== undefined
                       ? () => onHighlightClick?.(blockIndex)
@@ -563,7 +570,10 @@ function ComparisonDialog({
                   language={report.language}
                   scrollContainerRef={scrollRefA}
                   onHighlightClick={(bi) =>
-                    scrollToBlock(report.matches[bi]?.lineHighlightsB ?? [], scrollRefB)
+                    scrollToBlock(
+                      report.matches[bi]?.lineHighlightsB ?? [],
+                      scrollRefB,
+                    )
                   }
                 />
                 <FullCodePanel
@@ -574,7 +584,10 @@ function ComparisonDialog({
                   language={report.language}
                   scrollContainerRef={scrollRefB}
                   onHighlightClick={(bi) =>
-                    scrollToBlock(report.matches[bi]?.lineHighlightsA ?? [], scrollRefA)
+                    scrollToBlock(
+                      report.matches[bi]?.lineHighlightsA ?? [],
+                      scrollRefA,
+                    )
                   }
                 />
               </div>
@@ -593,6 +606,7 @@ function ReportListDialog({
   onClose,
   submission,
   reports,
+  repoReports,
   emailById,
   onOpenReport,
 }: {
@@ -600,17 +614,36 @@ function ReportListDialog({
   onClose: () => void;
   submission: Submission | null;
   reports: SimilarityReport[];
+  repoReports: SimilarityReport[];
   emailById: Map<string, string>;
   onOpenReport: (sr: SimilarityReport) => void;
 }) {
+  const [manualTab, setManualTab] = useState<"current" | "repo" | null>(null);
+  const [prevSubmissionId, setPrevSubmissionId] = useState<string | null>(null);
+
+  // Synchronously reset manual tab when submission changes — avoids post-render flicker
+  const currentId = submission?.submission_id ?? null;
+  if (currentId !== prevSubmissionId) {
+    setPrevSubmissionId(currentId);
+    setManualTab(null);
+  }
+
   if (!submission) return null;
 
-  // Match using the camelCase fields the API actually returns
-  const matching = reports.filter(
+  const studentMatching = reports.filter(
     (r) =>
       r.submissionA === submission.submission_id ||
       r.submissionB === submission.submission_id,
   );
+  const repoMatching = repoReports.filter(
+    (r) =>
+      r.submissionA === submission.submission_id ||
+      r.submissionB === submission.submission_id,
+  );
+  const defaultTab: "current" | "repo" =
+    studentMatching.length === 0 && repoMatching.length > 0 ? "repo" : "current";
+  const tab = manualTab ?? defaultTab;
+  const matching = tab === "current" ? studentMatching : repoMatching;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -618,7 +651,31 @@ function ReportListDialog({
         <DialogHeader>
           <DialogTitle>Reports for {submission.email}</DialogTitle>
         </DialogHeader>
-        <div className="mt-2 space-y-3">
+
+        <div className="flex w-fit items-center rounded-lg border bg-muted p-1">
+          <button
+            onClick={() => setManualTab("current")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === "current"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Current Submissions
+          </button>
+          <button
+            onClick={() => setManualTab("repo")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === "repo"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            With Repository
+          </button>
+        </div>
+
+        <div className="mt-2 max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           {matching.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No reports found.
@@ -631,6 +688,21 @@ function ReportListDialog({
                   : sr.submissionA;
               const sev = getLevelCardClass(sr.similarityLevel);
               const reportKey = `${sr.submissionA}_${sr.submissionB}`;
+
+              // For repo tab: the other party is a repo upload — show filename instead of unknown ID
+              let otherLabel: string;
+              if (tab === "repo" && !emailById.has(otherId)) {
+                const repoFiles =
+                  otherId === sr.submissionB
+                    ? Object.keys(sr.fileOffsetsB)
+                    : Object.keys(sr.fileOffsetsA);
+                otherLabel =
+                  repoFiles.length === 1
+                    ? repoFiles[0]
+                    : `${repoFiles.length} files`;
+              } else {
+                otherLabel = emailById.get(otherId) ?? otherId;
+              }
 
               return (
                 <button
@@ -652,7 +724,7 @@ function ReportListDialog({
                         </Badge>
                       </div>
                       <p className="font-mono text-xs text-muted-foreground">
-                        vs {emailById.get(otherId) ?? otherId}
+                        vs {otherLabel}
                       </p>
                       <p className="text-xs capitalize text-muted-foreground">
                         {sr.language}
@@ -674,9 +746,11 @@ function ReportListDialog({
 function ViewResourcesDialog({
   open,
   onClose,
+  boilerplateFilename,
 }: {
   open: boolean;
   onClose: () => void;
+  boilerplateFilename: string | null;
 }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -693,13 +767,17 @@ function ViewResourcesDialog({
               <p className="text-sm font-medium text-slate-800">
                 Boilerplate Code
               </p>
-              <p className="text-xs text-muted-foreground">No file uploaded</p>
+              {boilerplateFilename ? (
+                <p className="font-mono text-xs text-slate-600">{boilerplateFilename}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">No file uploaded</p>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
             <div>
               <p className="text-sm font-medium text-slate-800">Repository</p>
-              <p className="text-xs text-muted-foreground">No file uploaded</p>
+              <p className="text-xs text-muted-foreground">Not working yet!</p>
             </div>
           </div>
         </div>
@@ -738,7 +816,11 @@ function ExportConfirmDialog({
           <Button variant="outline" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <LoadingButton onClick={onConfirm} loading={loading} className="gap-2">
+          <LoadingButton
+            onClick={onConfirm}
+            loading={loading}
+            className="gap-2"
+          >
             <Download className="h-4 w-4" />
             {loading ? "Exporting..." : "Export"}
           </LoadingButton>
@@ -754,10 +836,14 @@ function CompareAllSuccessDialog({
   open,
   onClose,
   totalPairs,
+  title = "Analysis Complete",
+  description = "All submission pairs have been compared.",
 }: {
   open: boolean;
   onClose: () => void;
   totalPairs: number;
+  title?: string;
+  description?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -769,10 +855,8 @@ function CompareAllSuccessDialog({
           </div>
 
           <div className="space-y-1">
-            <DialogTitle className="text-xl">Analysis Complete</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              All submission pairs have been compared.
-            </p>
+            <DialogTitle className="text-xl">{title}</DialogTitle>
+            <p className="text-sm text-muted-foreground">{description}</p>
           </div>
 
           {/* Stats */}
@@ -878,22 +962,30 @@ export function AssignmentView({
   assignment,
   course,
   initialReports,
+  initialRepoReports,
+  initialBoilerplateFilename,
 }: {
   assignment: AssignmentDetail;
   course: CourseInfo;
   initialReports: SimilarityReport[];
+  initialRepoReports: SimilarityReport[];
+  initialBoilerplateFilename: string | null;
 }) {
   const router = useRouter();
 
   const [reports, setReports] = useState<SimilarityReport[]>(initialReports);
+  const [repoReports, setRepoReports] = useState<SimilarityReport[]>(initialRepoReports);
   const [comparingAll, setComparingAll] = useState(false);
+  const [comparingRepo, setComparingRepo] = useState(false);
   const [report, setReport] = useState<ComparisonReport | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailSubmission, setDetailSubmission] = useState<Submission | null>(
     null,
   );
-  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
-  const [compareAllResult, setCompareAllResult] = useState<{
+  const [successDialogType, setSuccessDialogType] = useState<
+    "current" | "repo" | null
+  >(null);
+  const [compareResult, setCompareResult] = useState<{
     totalPairs: number;
   } | null>(null);
   const [uploadDialogType, setUploadDialogType] = useState<
@@ -902,6 +994,9 @@ export function AssignmentView({
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [viewResourcesOpen, setViewResourcesOpen] = useState(false);
+  const [boilerplateFilename, setBoilerplateFilename] = useState<string | null>(
+    initialBoilerplateFilename,
+  );
 
   const submissions = assignment.submissions;
 
@@ -920,6 +1015,20 @@ export function AssignmentView({
 
     const data: SimilarityReport[] = await res.json();
     setReports(Array.isArray(data) ? data : []);
+  };
+
+  const refreshRepoReports = async () => {
+    const ids = submissions.map((s) => s.submission_id).join(",");
+    const res = await fetch(
+      `/api/engine/similarity-report-repo?submission_ids=${ids}`,
+    );
+    if (res.status === 401) {
+      router.push("/");
+      return;
+    }
+    if (!res.ok) return;
+    const data: SimilarityReport[] = await res.json();
+    setRepoReports(Array.isArray(data) ? data : []);
   };
 
   const handleCompareAll = async () => {
@@ -947,14 +1056,46 @@ export function AssignmentView({
 
       const result = await res.json();
       await refreshReports();
-      setCompareAllResult({
-        totalPairs: result.total_pairs ?? 0,
-      });
-      setSuccessDialogOpen(true);
+      setCompareResult({ totalPairs: result.total_pairs ?? 0 });
+      setSuccessDialogType("current");
     } catch {
       toast({ variant: "destructive", title: "Comparison failed." });
     } finally {
       setComparingAll(false);
+    }
+  };
+
+  const handleCompareRepo = async () => {
+    setComparingRepo(true);
+    toast({
+      title: "Repository comparison started",
+      description:
+        "This may take a few seconds. We'll notify you when it's done.",
+    });
+    try {
+      const res = await fetch(
+        `/api/engine/assignments/${assignment.assignment_id}/compare-repo`,
+        { method: "POST", headers: { Accept: "application/json" } },
+      );
+
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      if (res.status === 400) {
+        toast({ variant: "destructive", title: "Invalid assignment ID" });
+        return;
+      }
+      if (!res.ok) throw new Error();
+
+      const result = await res.json();
+      await refreshRepoReports();
+      setCompareResult({ totalPairs: result.total_pairs ?? 0 });
+      setSuccessDialogType("repo");
+    } catch {
+      toast({ variant: "destructive", title: "Repository comparison failed." });
+    } finally {
+      setComparingRepo(false);
     }
   };
 
@@ -993,9 +1134,10 @@ export function AssignmentView({
 
   const emailById = new Map(submissions.map((s) => [s.submission_id, s.email]));
 
-  const submissionsWithReports = new Set(
-    reports.flatMap((r) => [r.submissionA, r.submissionB]),
-  );
+  const submissionsWithReports = new Set([
+    ...reports.flatMap((r) => [r.submissionA, r.submissionB]),
+    ...repoReports.flatMap((r) => [r.submissionA, r.submissionB]),
+  ]);
 
   const submissionsHighRisk = new Set(
     reports
@@ -1107,6 +1249,7 @@ export function AssignmentView({
                 <Button variant="outline" className="gap-2">
                   <FolderOpen className="h-4 w-4" />
                   Resources
+                  <ChevronDown className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1144,15 +1287,38 @@ export function AssignmentView({
               <Download className="h-4 w-4" />
               Export
             </Button>
-            <LoadingButton
-              onClick={handleCompareAll}
-              loading={comparingAll}
-              disabled={submissions.length < 2}
-              className="gap-2"
-            >
-              <Play className="h-4 w-4" />
-              {comparingAll ? "Analysing..." : "Compare All"}
-            </LoadingButton>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  disabled={
+                    comparingAll || comparingRepo || submissions.length < 2
+                  }
+                  className="gap-2"
+                >
+                  {comparingAll || comparingRepo ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  {comparingAll || comparingRepo ? "Analysing..." : "Compare"}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={comparingAll || comparingRepo}
+                  onClick={handleCompareAll}
+                >
+                  Current submissions
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={comparingAll || comparingRepo}
+                  onClick={handleCompareRepo}
+                >
+                  With repository
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -1182,6 +1348,7 @@ export function AssignmentView({
       <ViewResourcesDialog
         open={viewResourcesOpen}
         onClose={() => setViewResourcesOpen(false)}
+        boilerplateFilename={boilerplateFilename}
       />
 
       <ExportConfirmDialog
@@ -1197,6 +1364,7 @@ export function AssignmentView({
         onClose={() => setDetailSubmission(null)}
         submission={detailSubmission}
         reports={reports}
+        repoReports={repoReports}
         emailById={emailById}
         onOpenReport={handleOpenReport}
       />
@@ -1209,9 +1377,19 @@ export function AssignmentView({
       />
 
       <CompareAllSuccessDialog
-        open={successDialogOpen}
-        onClose={() => setSuccessDialogOpen(false)}
-        totalPairs={compareAllResult?.totalPairs ?? 0}
+        open={successDialogType !== null}
+        onClose={() => setSuccessDialogType(null)}
+        totalPairs={compareResult?.totalPairs ?? 0}
+        title={
+          successDialogType === "repo"
+            ? "Repository Analysis Complete"
+            : "Analysis Complete"
+        }
+        description={
+          successDialogType === "repo"
+            ? "All submission-repository pairs have been analysed."
+            : "All submission pairs have been compared."
+        }
       />
 
       <FileUploadDialog
@@ -1230,10 +1408,14 @@ export function AssignmentView({
           if (!res.ok) {
             throw new Error(data.message ?? "Upload failed. Please try again.");
           }
+          setBoilerplateFilename(data.name ?? file.name);
           return {
             details: [
               { label: "File", value: data.name ?? file.name },
-              { label: "Size", value: formatBytes(data.size_bytes ?? file.size) },
+              {
+                label: "Size",
+                value: formatBytes(data.size_bytes ?? file.size),
+              },
             ],
           };
         }}
