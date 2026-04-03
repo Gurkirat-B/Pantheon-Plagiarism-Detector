@@ -33,6 +33,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { LoadingButton } from "../LoadingButton";
 import JSZip from "jszip";
+import { zipHasValidSource } from "@/lib/zip-utils";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -69,19 +70,12 @@ export default function FileUpload() {
       for (const file of acceptedFiles) {
         try {
           const zip = await JSZip.loadAsync(file);
-          const fileNames = Object.keys(zip.files).filter(
-            (name) => !zip.files[name].dir, // exclude directory entries
-          );
-
-          const hasValidSource = fileNames.some((name) =>
-            [".java", ".cpp", ".c"].some((ext) => name.endsWith(ext)),
-          );
-
+          const hasValidSource = await zipHasValidSource(zip);
           if (!hasValidSource) {
             form.setError("files", {
               type: "manual",
               message:
-                "The zip must contain at least one .java, .cpp, or .c file.",
+                "The zip must contain at least one .java, .cpp, or .c file (including inside nested zips).",
             });
             return;
           }

@@ -35,7 +35,7 @@ export type CourseInfo = {
   name: string;
 };
 
-// Matches the actual API response shape from GET /engine/similarity-report?submission_id=
+// Matches the actual API response shape from GET /engine/similarity-report-student?submission_id=
 export type SimilarityReport = {
   // Submission identifiers (camelCase as returned by API)
   submissionA: string;
@@ -46,8 +46,11 @@ export type SimilarityReport = {
   language: string;
   // Full report detail fields
   matches: RawMatch[];
-  fullCodeA: Record<string, string>;
-  fullCodeB: Record<string, string>;
+  fullCodeA: string;
+  fullCodeB: string;
+  fileOffsetsA: Record<string, number>;
+  fileOffsetsB: Record<string, number>;
+  identicalSubmissions: boolean;
   High: number;
   Medium: number;
   Low: number;
@@ -61,8 +64,8 @@ export type RawMatch = {
   fileA: string;
   fileB: string;
   index: number;
-  linesA: string;
-  linesB: string;
+  linesA: number[];
+  linesB: number[];
   severity: string;
   lineHighlightsA: number[];
   lineHighlightsB: number[];
@@ -107,6 +110,26 @@ async function getCourse(token: string, courseId: string): Promise<CourseInfo> {
   return res.json();
 }
 
+async function getBoilerplate(
+  token: string,
+  assignmentId: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `${process.env.BACKEND_URL}/submissions/boilerplate/${assignmentId}`,
+    {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    },
+  );
+  if (res.status === 401) redirect("/");
+  if (res.status === 404 || !res.ok) return null;
+  const data = await res.json();
+  return data?.filename ?? null;
+}
+
 async function getReports(
   token: string,
   submissions: Submission[],
@@ -118,7 +141,7 @@ async function getReports(
   const batches = await Promise.all(
     withComparisons.map(async (s) => {
       const res = await fetch(
-        `${process.env.BACKEND_URL}/engine/similarity-report?submission_id=${s.submission_id}`,
+        `${process.env.BACKEND_URL}/engine/similarity-report-student?submission_id=${s.submission_id}`,
         {
           headers: {
             Accept: "application/json",
@@ -143,6 +166,49 @@ async function getReports(
     if (!Array.isArray(batch)) continue;
     for (const report of batch) {
       // Normalise the key so A+B and B+A are treated as the same pair
+      const ids = [report.submissionA, report.submissionB].sort();
+      const key = ids.join("_");
+      if (!seen.has(key)) {
+        seen.add(key);
+        all.push(report);
+      }
+    }
+  }
+  return all;
+}
+
+async function getRepoReports(
+  token: string,
+  submissions: Submission[],
+): Promise<SimilarityReport[]> {
+  if (submissions.length === 0) return [];
+  const withComparisons = submissions.filter((s) => s.has_comparison);
+  if (withComparisons.length === 0) return [];
+
+  const batches = await Promise.all(
+    withComparisons.map(async (s) => {
+      const res = await fetch(
+        `${process.env.BACKEND_URL}/engine/similarity-report-repo?submission_id=${s.submission_id}`,
+        {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        },
+      );
+      if (res.status === 401) redirect("/");
+      if (res.status === 404 || !res.ok) return [] as SimilarityReport[];
+      const data = await res.json();
+      return (Array.isArray(data) ? data : [data]) as SimilarityReport[];
+    }),
+  );
+
+  const seen = new Set<string>();
+  const all: SimilarityReport[] = [];
+  for (const batch of batches) {
+    if (!Array.isArray(batch)) continue;
+    for (const report of batch) {
       const ids = [report.submissionA, report.submissionB].sort();
       const key = ids.join("_");
       if (!seen.has(key)) {
@@ -191,9 +257,11 @@ export default async function AssignmentPage({
   const assignment = await getAssignment(token, assignmentSlug);
   if (assignment === null) notFound();
 
-  const [course, initialReports] = await Promise.all([
+  const [course, initialReports, initialRepoReports, initialBoilerplateFilename] = await Promise.all([
     getCourse(token, assignment.course_id),
     getReports(token, assignment.submissions),
+    getRepoReports(token, assignment.submissions),
+    getBoilerplate(token, assignment.assignment_id),
   ]);
 
   return (
@@ -201,6 +269,8 @@ export default async function AssignmentPage({
       assignment={assignment}
       course={course}
       initialReports={initialReports}
+      initialRepoReports={initialRepoReports}
+      initialBoilerplateFilename={initialBoilerplateFilename}
     />
   );
 }

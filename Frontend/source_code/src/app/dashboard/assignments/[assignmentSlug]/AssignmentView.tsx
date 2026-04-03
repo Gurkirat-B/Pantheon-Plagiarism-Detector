@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -17,8 +17,13 @@ import {
   FileCode,
   Play,
   Info,
+  Plus,
+  Download,
+  FolderOpen,
+  Loader2,
 } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +35,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingButton } from "@/components/LoadingButton";
+import {
+  FileUploadDialog,
+  type UploadSuccessData,
+} from "@/components/FileUploadDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 
 import type {
@@ -40,13 +59,19 @@ import type {
 } from "./page";
 import {
   mapReport,
-  buildHighlightMap,
+  buildLineToBlockMap,
   type ComparisonReport,
   type MatchSeverity,
   type CodeMatch,
 } from "@/lib/report_types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatDate(dateStr: string) {
   const [year, month, day] = dateStr.split("T")[0].split("-");
@@ -72,17 +97,6 @@ function getSeverityClass(severity: MatchSeverity) {
       return "border-orange-200 bg-orange-50 text-orange-700";
     case "LOW":
       return "border-yellow-200 bg-yellow-50 text-yellow-700";
-  }
-}
-
-function getHighlightBg(severity: MatchSeverity) {
-  switch (severity) {
-    case "HIGH":
-      return "bg-red-300";
-    case "MEDIUM":
-      return "bg-orange-200";
-    case "LOW":
-      return "bg-yellow-200";
   }
 }
 
@@ -112,27 +126,35 @@ function getLevelBg(level: string) {
   }
 }
 
-// Score is 0–100 (from similarityScore field)
-function getScoreSeverity(score: number): {
+function getLevelCardClass(level: string): {
   label: string;
   className: string;
 } {
-  if (score >= 80)
-    return {
-      label: "HIGH",
-      className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
-    };
-  if (score >= 50)
-    return {
-      label: "MEDIUM",
-      className:
-        "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
-    };
-  return {
-    label: "LOW",
-    className:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-  };
+  switch (level) {
+    case "CRITICAL":
+      return {
+        label: "CRITICAL",
+        className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
+      };
+    case "HIGH":
+      return {
+        label: "HIGH",
+        className:
+          "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100",
+      };
+    case "MEDIUM":
+      return {
+        label: "MEDIUM",
+        className:
+          "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
+      };
+    default:
+      return {
+        label: "LOW",
+        className:
+          "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+      };
+  }
 }
 
 // ─── Inline comment splitter ──────────────────────────────────────────────────
@@ -226,18 +248,35 @@ function MatchCodePanel({
 
 // ─── Full Code Panel ──────────────────────────────────────────────────────────
 
+const BLOCK_COLORS = [
+  "bg-sky-200",
+  "bg-violet-200",
+  "bg-emerald-200",
+  "bg-amber-200",
+  "bg-rose-200",
+  "bg-teal-200",
+  "bg-orange-200",
+  "bg-fuchsia-200",
+  "bg-cyan-200",
+  "bg-lime-200",
+];
+
 function FullCodePanel({
   label,
   fileName,
   code,
-  highlightMap,
+  lineToBlockMap,
   language,
+  scrollContainerRef,
+  onHighlightClick,
 }: {
   label: string;
   fileName: string;
   code: string;
-  highlightMap: Map<number, MatchSeverity>;
+  lineToBlockMap: Map<number, number>;
   language: string;
+  scrollContainerRef: RefObject<HTMLDivElement>;
+  onHighlightClick?: (blockIndex: number) => void;
 }) {
   const lines = code.split("\n");
 
@@ -250,46 +289,51 @@ function FullCodePanel({
         <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
           {fileName}
         </p>
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-red-300" />
-            High
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-orange-200" />
-            Medium
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm bg-yellow-200" />
-            Low
-          </span>
-        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Click a highlighted line to scroll the other panel to its match.
+        </p>
       </div>
 
-      <div className="flex-1 overflow-auto bg-muted">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-muted">
         <table className="w-full font-mono text-sm">
           <tbody>
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
-              const severity = highlightMap.get(lineNum);
-              const { code: codePart, comment } = severity
-                ? splitInlineComment(line, language)
-                : { code: line, comment: null };
-
-              const highlightSpanClass = severity
-                ? `rounded-sm px-0.5 ${getHighlightBg(severity)}`
-                : "";
+              const blockIndex =
+                line.trim() === "" ? undefined : lineToBlockMap.get(lineNum);
+              const color =
+                blockIndex !== undefined
+                  ? BLOCK_COLORS[blockIndex % BLOCK_COLORS.length]
+                  : undefined;
+              const { code: codePart, comment } =
+                blockIndex !== undefined
+                  ? splitInlineComment(line, language)
+                  : { code: line, comment: null };
 
               return (
-                <tr key={lineNum} className="leading-relaxed">
+                <tr
+                  key={lineNum}
+                  data-line={lineNum}
+                  className={cn(
+                    "leading-relaxed",
+                    blockIndex !== undefined && "cursor-pointer",
+                  )}
+                  onClick={
+                    blockIndex !== undefined
+                      ? () => onHighlightClick?.(blockIndex)
+                      : undefined
+                  }
+                >
                   <td className="w-10 select-none px-3 py-0 text-right align-top text-slate-300">
                     {lineNum}
                   </td>
                   <td className="px-3 py-0">
                     <pre className="whitespace-pre text-slate-800">
-                      {severity ? (
+                      {color ? (
                         <>
-                          <span className={highlightSpanClass}>{codePart}</span>
+                          <span className={`rounded-sm px-0.5 ${color}`}>
+                            {codePart}
+                          </span>
                           {comment && <span>{comment}</span>}
                         </>
                       ) : (
@@ -372,25 +416,45 @@ function ComparisonDialog({
   open,
   onClose,
   report,
+  emailById,
 }: {
   open: boolean;
   onClose: () => void;
   report: ComparisonReport | null;
+  emailById: Map<string, string>;
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>("blocks");
+  const scrollRefA = useRef<HTMLDivElement>(null);
+  const scrollRefB = useRef<HTMLDivElement>(null);
+
+  const handleClose = () => {
+    setViewMode("blocks");
+    onClose();
+  };
 
   if (!report) return null;
 
-  const fileNameA = Object.keys(report.fullCodeA)[0] ?? "Submission A";
-  const fileNameB = Object.keys(report.fullCodeB)[0] ?? "Submission B";
-  const fullCodeA = report.fullCodeA[fileNameA] ?? "";
-  const fullCodeB = report.fullCodeB[fileNameB] ?? "";
+  const filesA = Object.keys(report.fileOffsetsA);
+  const filesB = Object.keys(report.fileOffsetsB);
+  const fileNameA = filesA.length === 1 ? filesA[0] : `${filesA.length} files`;
+  const fileNameB = filesB.length === 1 ? filesB[0] : `${filesB.length} files`;
 
-  const highlightMapA = buildHighlightMap(report.matches, fileNameA, "A");
-  const highlightMapB = buildHighlightMap(report.matches, fileNameB, "B");
+  const lineToBlockMapA = buildLineToBlockMap(report.matches, "A");
+  const lineToBlockMapB = buildLineToBlockMap(report.matches, "B");
+
+  const scrollToBlock = (
+    highlights: number[],
+    containerRef: RefObject<HTMLDivElement>,
+  ) => {
+    if (highlights.length === 0) return;
+    const el = containerRef.current?.querySelector(
+      `[data-line="${highlights[0]}"]`,
+    );
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-5">
           <div className="flex items-center justify-between">
@@ -399,7 +463,9 @@ function ComparisonDialog({
                 Plagiarism Detection Report
               </DialogTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                {report.submissionA} vs {report.submissionB} · {report.language}
+                {emailById.get(report.submissionA) ?? report.submissionA} vs{" "}
+                {emailById.get(report.submissionB) ?? report.submissionB} ·{" "}
+                {report.language}
               </p>
             </div>
 
@@ -494,24 +560,35 @@ function ComparisonDialog({
           )}
 
           {viewMode === "fullcode" && (
-            <div className="mx-6 my-5">
-              <p className="mb-3 text-sm font-semibold text-slate-700">
-                Full Submissions — highlighted lines indicate matching sections
-              </p>
-              <div className="flex gap-3" style={{ minHeight: "500px" }}>
+            <div className="mx-6 mt-5 pb-6">
+              <div className="flex h-[80vh] gap-3">
                 <FullCodePanel
-                  label="Submission A"
+                  label={emailById.get(report.submissionA) ?? "Submission A"}
                   fileName={fileNameA}
-                  code={fullCodeA}
-                  highlightMap={highlightMapA}
+                  code={report.fullCodeA}
+                  lineToBlockMap={lineToBlockMapA}
                   language={report.language}
+                  scrollContainerRef={scrollRefA}
+                  onHighlightClick={(bi) =>
+                    scrollToBlock(
+                      report.matches[bi]?.lineHighlightsB ?? [],
+                      scrollRefB,
+                    )
+                  }
                 />
                 <FullCodePanel
-                  label="Submission B"
+                  label={emailById.get(report.submissionB) ?? "Submission B"}
                   fileName={fileNameB}
-                  code={fullCodeB}
-                  highlightMap={highlightMapB}
+                  code={report.fullCodeB}
+                  lineToBlockMap={lineToBlockMapB}
                   language={report.language}
+                  scrollContainerRef={scrollRefB}
+                  onHighlightClick={(bi) =>
+                    scrollToBlock(
+                      report.matches[bi]?.lineHighlightsA ?? [],
+                      scrollRefA,
+                    )
+                  }
                 />
               </div>
             </div>
@@ -529,22 +606,44 @@ function ReportListDialog({
   onClose,
   submission,
   reports,
+  repoReports,
+  emailById,
   onOpenReport,
 }: {
   open: boolean;
   onClose: () => void;
   submission: Submission | null;
   reports: SimilarityReport[];
+  repoReports: SimilarityReport[];
+  emailById: Map<string, string>;
   onOpenReport: (sr: SimilarityReport) => void;
 }) {
+  const [manualTab, setManualTab] = useState<"current" | "repo" | null>(null);
+  const [prevSubmissionId, setPrevSubmissionId] = useState<string | null>(null);
+
+  // Synchronously reset manual tab when submission changes — avoids post-render flicker
+  const currentId = submission?.submission_id ?? null;
+  if (currentId !== prevSubmissionId) {
+    setPrevSubmissionId(currentId);
+    setManualTab(null);
+  }
+
   if (!submission) return null;
 
-  // Match using the camelCase fields the API actually returns
-  const matching = reports.filter(
+  const studentMatching = reports.filter(
     (r) =>
       r.submissionA === submission.submission_id ||
       r.submissionB === submission.submission_id,
   );
+  const repoMatching = repoReports.filter(
+    (r) =>
+      r.submissionA === submission.submission_id ||
+      r.submissionB === submission.submission_id,
+  );
+  const defaultTab: "current" | "repo" =
+    studentMatching.length === 0 && repoMatching.length > 0 ? "repo" : "current";
+  const tab = manualTab ?? defaultTab;
+  const matching = tab === "current" ? studentMatching : repoMatching;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -552,7 +651,31 @@ function ReportListDialog({
         <DialogHeader>
           <DialogTitle>Reports for {submission.email}</DialogTitle>
         </DialogHeader>
-        <div className="mt-2 space-y-3">
+
+        <div className="flex w-fit items-center rounded-lg border bg-muted p-1">
+          <button
+            onClick={() => setManualTab("current")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === "current"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Current Submissions
+          </button>
+          <button
+            onClick={() => setManualTab("repo")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === "repo"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            With Repository
+          </button>
+        </div>
+
+        <div className="mt-2 max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           {matching.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No reports found.
@@ -563,9 +686,23 @@ function ReportListDialog({
                 sr.submissionA === submission.submission_id
                   ? sr.submissionB
                   : sr.submissionA;
-              // similarityScore is already 0–100
-              const sev = getScoreSeverity(sr.similarityScore);
+              const sev = getLevelCardClass(sr.similarityLevel);
               const reportKey = `${sr.submissionA}_${sr.submissionB}`;
+
+              // For repo tab: the other party is a repo upload — show filename instead of unknown ID
+              let otherLabel: string;
+              if (tab === "repo" && !emailById.has(otherId)) {
+                const repoFiles =
+                  otherId === sr.submissionB
+                    ? Object.keys(sr.fileOffsetsB)
+                    : Object.keys(sr.fileOffsetsA);
+                otherLabel =
+                  repoFiles.length === 1
+                    ? repoFiles[0]
+                    : `${repoFiles.length} files`;
+              } else {
+                otherLabel = emailById.get(otherId) ?? otherId;
+              }
 
               return (
                 <button
@@ -587,7 +724,7 @@ function ReportListDialog({
                         </Badge>
                       </div>
                       <p className="font-mono text-xs text-muted-foreground">
-                        vs {otherId}
+                        vs {otherLabel}
                       </p>
                       <p className="text-xs capitalize text-muted-foreground">
                         {sr.language}
@@ -604,18 +741,109 @@ function ReportListDialog({
   );
 }
 
+// ─── View Resources Dialog ────────────────────────────────────────────────────
+
+function ViewResourcesDialog({
+  open,
+  onClose,
+  boilerplateFilename,
+}: {
+  open: boolean;
+  onClose: () => void;
+  boilerplateFilename: string | null;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FolderOpen className="h-5 w-5 text-slate-500" />
+            Assignment Resources
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-2 space-y-3">
+          <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-slate-800">
+                Boilerplate Code
+              </p>
+              {boilerplateFilename ? (
+                <p className="font-mono text-xs text-slate-600">{boilerplateFilename}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">No file uploaded</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-slate-800">Repository</p>
+              <p className="text-xs text-muted-foreground">Not working yet!</p>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Export Confirm Dialog ────────────────────────────────────────────────────
+
+function ExportConfirmDialog({
+  open,
+  onClose,
+  onConfirm,
+  loading,
+  submissionCount,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  loading: boolean;
+  submissionCount: number;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Export Submissions</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          You are about to export all {submissionCount} student submission
+          {submissionCount !== 1 ? "s" : ""} for this assignment. A download
+          link will be generated and your download will start automatically.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <LoadingButton
+            onClick={onConfirm}
+            loading={loading}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            {loading ? "Exporting..." : "Export"}
+          </LoadingButton>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Compare All Success Dialog ───────────────────────────────────────────────
 
 function CompareAllSuccessDialog({
   open,
   onClose,
   totalPairs,
-  flaggedPairs,
+  title = "Analysis Complete",
+  description = "All submission pairs have been compared.",
 }: {
   open: boolean;
   onClose: () => void;
   totalPairs: number;
-  flaggedPairs: number;
+  title?: string;
+  description?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -627,10 +855,8 @@ function CompareAllSuccessDialog({
           </div>
 
           <div className="space-y-1">
-            <DialogTitle className="text-xl">Analysis Complete</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              All submission pairs have been compared.
-            </p>
+            <DialogTitle className="text-xl">{title}</DialogTitle>
+            <p className="text-sm text-muted-foreground">{description}</p>
           </div>
 
           {/* Stats */}
@@ -641,16 +867,6 @@ function CompareAllSuccessDialog({
               </span>
               <span className="text-sm font-semibold text-slate-800">
                 {totalPairs}
-              </span>
-            </div>
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm text-muted-foreground">
-                Flagged pairs
-              </span>
-              <span
-                className={`text-sm font-semibold ${flaggedPairs > 0 ? "text-red-600" : "text-emerald-600"}`}
-              >
-                {flaggedPairs}
               </span>
             </div>
           </div>
@@ -746,25 +962,41 @@ export function AssignmentView({
   assignment,
   course,
   initialReports,
+  initialRepoReports,
+  initialBoilerplateFilename,
 }: {
   assignment: AssignmentDetail;
   course: CourseInfo;
   initialReports: SimilarityReport[];
+  initialRepoReports: SimilarityReport[];
+  initialBoilerplateFilename: string | null;
 }) {
   const router = useRouter();
 
   const [reports, setReports] = useState<SimilarityReport[]>(initialReports);
+  const [repoReports, setRepoReports] = useState<SimilarityReport[]>(initialRepoReports);
   const [comparingAll, setComparingAll] = useState(false);
+  const [comparingRepo, setComparingRepo] = useState(false);
   const [report, setReport] = useState<ComparisonReport | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailSubmission, setDetailSubmission] = useState<Submission | null>(
     null,
   );
-  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
-  const [compareAllResult, setCompareAllResult] = useState<{
+  const [successDialogType, setSuccessDialogType] = useState<
+    "current" | "repo" | null
+  >(null);
+  const [compareResult, setCompareResult] = useState<{
     totalPairs: number;
-    flaggedPairs: number;
   } | null>(null);
+  const [uploadDialogType, setUploadDialogType] = useState<
+    "boilerplate" | "repository" | null
+  >(null);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [viewResourcesOpen, setViewResourcesOpen] = useState(false);
+  const [boilerplateFilename, setBoilerplateFilename] = useState<string | null>(
+    initialBoilerplateFilename,
+  );
 
   const submissions = assignment.submissions;
 
@@ -772,7 +1004,7 @@ export function AssignmentView({
   const refreshReports = async () => {
     const ids = submissions.map((s) => s.submission_id).join(",");
     const res = await fetch(
-      `/api/engine/similarity-report?submission_ids=${ids}`,
+      `/api/engine/similarity-report-student?submission_ids=${ids}`,
     );
 
     if (res.status === 401) {
@@ -785,8 +1017,27 @@ export function AssignmentView({
     setReports(Array.isArray(data) ? data : []);
   };
 
+  const refreshRepoReports = async () => {
+    const ids = submissions.map((s) => s.submission_id).join(",");
+    const res = await fetch(
+      `/api/engine/similarity-report-repo?submission_ids=${ids}`,
+    );
+    if (res.status === 401) {
+      router.push("/");
+      return;
+    }
+    if (!res.ok) return;
+    const data: SimilarityReport[] = await res.json();
+    setRepoReports(Array.isArray(data) ? data : []);
+  };
+
   const handleCompareAll = async () => {
     setComparingAll(true);
+    toast({
+      title: "Comparison started",
+      description:
+        "This may take a few seconds. We'll notify you when it's done.",
+    });
     try {
       const res = await fetch(
         `/api/engine/assignments/${assignment.assignment_id}/compare-all`,
@@ -805,15 +1056,71 @@ export function AssignmentView({
 
       const result = await res.json();
       await refreshReports();
-      setCompareAllResult({
-        totalPairs: result.total_pairs ?? 0,
-        flaggedPairs: result.flagged_pairs ?? 0,
-      });
-      setSuccessDialogOpen(true);
+      setCompareResult({ totalPairs: result.total_pairs ?? 0 });
+      setSuccessDialogType("current");
     } catch {
       toast({ variant: "destructive", title: "Comparison failed." });
     } finally {
       setComparingAll(false);
+    }
+  };
+
+  const handleCompareRepo = async () => {
+    setComparingRepo(true);
+    toast({
+      title: "Repository comparison started",
+      description:
+        "This may take a few seconds. We'll notify you when it's done.",
+    });
+    try {
+      const res = await fetch(
+        `/api/engine/assignments/${assignment.assignment_id}/compare-repo`,
+        { method: "POST", headers: { Accept: "application/json" } },
+      );
+
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      if (res.status === 400) {
+        toast({ variant: "destructive", title: "Invalid assignment ID" });
+        return;
+      }
+      if (!res.ok) throw new Error();
+
+      const result = await res.json();
+      await refreshRepoReports();
+      setCompareResult({ totalPairs: result.total_pairs ?? 0 });
+      setSuccessDialogType("repo");
+    } catch {
+      toast({ variant: "destructive", title: "Repository comparison failed." });
+    } finally {
+      setComparingRepo(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/submissions/${assignment.assignment_id}/export`,
+      );
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setExportConfirmOpen(false);
+      toast({
+        title: "Export ready",
+        description: `${data.count} submission${data.count !== 1 ? "s" : ""} · ${formatBytes(data.size_bytes)}. Your download will start shortly.`,
+      });
+      window.open(data.download_url, "_blank");
+    } catch {
+      toast({ variant: "destructive", title: "Export failed." });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -825,9 +1132,12 @@ export function AssignmentView({
     setDialogOpen(true);
   };
 
-  const submissionsWithReports = new Set(
-    reports.flatMap((r) => [r.submissionA, r.submissionB]),
-  );
+  const emailById = new Map(submissions.map((s) => [s.submission_id, s.email]));
+
+  const submissionsWithReports = new Set([
+    ...reports.flatMap((r) => [r.submissionA, r.submissionB]),
+    ...repoReports.flatMap((r) => [r.submissionA, r.submissionB]),
+  ]);
 
   const submissionsHighRisk = new Set(
     reports
@@ -933,15 +1243,83 @@ export function AssignmentView({
             </p>
           </div>
 
-          <LoadingButton
-            onClick={handleCompareAll}
-            loading={comparingAll}
-            disabled={submissions.length < 2}
-            className="gap-2"
-          >
-            <Play className="h-4 w-4" />
-            {comparingAll ? "Analysing..." : "Compare All"}
-          </LoadingButton>
+          <div className="flex gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <FolderOpen className="h-4 w-4" />
+                  Resources
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem
+                      onClick={() => setUploadDialogType("boilerplate")}
+                    >
+                      Add boilerplate code
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setUploadDialogType("repository")}
+                    >
+                      Add repository
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setViewResourcesOpen(true)}>
+                  <FolderOpen className="mr-2 h-4 w-4" />
+                  View resources
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={submissions.length === 0}
+              onClick={() => setExportConfirmOpen(true)}
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  disabled={
+                    comparingAll || comparingRepo || submissions.length < 2
+                  }
+                  className="gap-2"
+                >
+                  {comparingAll || comparingRepo ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  {comparingAll || comparingRepo ? "Analysing..." : "Compare"}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={comparingAll || comparingRepo}
+                  onClick={handleCompareAll}
+                >
+                  Current submissions
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={comparingAll || comparingRepo}
+                  onClick={handleCompareRepo}
+                >
+                  With repository
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <Separator />
@@ -967,11 +1345,27 @@ export function AssignmentView({
         </div>
       </div>
 
+      <ViewResourcesDialog
+        open={viewResourcesOpen}
+        onClose={() => setViewResourcesOpen(false)}
+        boilerplateFilename={boilerplateFilename}
+      />
+
+      <ExportConfirmDialog
+        open={exportConfirmOpen}
+        onClose={() => setExportConfirmOpen(false)}
+        onConfirm={handleExport}
+        loading={exporting}
+        submissionCount={submissions.length}
+      />
+
       <ReportListDialog
         open={detailSubmission !== null}
         onClose={() => setDetailSubmission(null)}
         submission={detailSubmission}
         reports={reports}
+        repoReports={repoReports}
+        emailById={emailById}
         onOpenReport={handleOpenReport}
       />
 
@@ -979,13 +1373,79 @@ export function AssignmentView({
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         report={report}
+        emailById={emailById}
       />
 
       <CompareAllSuccessDialog
-        open={successDialogOpen}
-        onClose={() => setSuccessDialogOpen(false)}
-        totalPairs={compareAllResult?.totalPairs ?? 0}
-        flaggedPairs={compareAllResult?.flaggedPairs ?? 0}
+        open={successDialogType !== null}
+        onClose={() => setSuccessDialogType(null)}
+        totalPairs={compareResult?.totalPairs ?? 0}
+        title={
+          successDialogType === "repo"
+            ? "Repository Analysis Complete"
+            : "Analysis Complete"
+        }
+        description={
+          successDialogType === "repo"
+            ? "All submission-repository pairs have been analysed."
+            : "All submission pairs have been compared."
+        }
+      />
+
+      <FileUploadDialog
+        open={uploadDialogType === "boilerplate"}
+        onClose={() => setUploadDialogType(null)}
+        title="Add Boilerplate Code"
+        description="Upload a zip file containing the boilerplate code for this assignment."
+        onUpload={async (file): Promise<UploadSuccessData> => {
+          const body = new FormData();
+          body.append("file", file);
+          const res = await fetch(
+            `/api/submissions/boilerplate/${assignment.assignment_id}`,
+            { method: "POST", body },
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.message ?? "Upload failed. Please try again.");
+          }
+          setBoilerplateFilename(data.name ?? file.name);
+          return {
+            details: [
+              { label: "File", value: data.name ?? file.name },
+              {
+                label: "Size",
+                value: formatBytes(data.size_bytes ?? file.size),
+              },
+            ],
+          };
+        }}
+      />
+
+      <FileUploadDialog
+        open={uploadDialogType === "repository"}
+        onClose={() => setUploadDialogType(null)}
+        title="Add Repository"
+        description="Upload a zip file containing the reference repository for this assignment."
+        onUpload={async (file): Promise<UploadSuccessData> => {
+          const body = new FormData();
+          body.append("file", file);
+          const res = await fetch(
+            `/api/submissions/repo/${assignment.assignment_id}`,
+            { method: "POST", body },
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.message ?? "Upload failed. Please try again.");
+          }
+          return {
+            details: [
+              {
+                label: "Files uploaded",
+                value: String(data.uploaded_count ?? 0),
+              },
+            ],
+          };
+        }}
       />
     </main>
   );

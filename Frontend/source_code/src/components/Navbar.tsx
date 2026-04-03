@@ -14,7 +14,7 @@ export default async function Navbar() {
   let professorEmail = "";
 
   if (token) {
-    const res = await fetch(`${process.env.BACKEND_URL}/auth/role`, {
+    const res = await fetch(`${process.env.BACKEND_URL}/auth/me`, {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
@@ -24,9 +24,19 @@ export default async function Navbar() {
 
     if (res.ok) {
       const data = await res.json();
-      isProfessor = data.role === "professor";
-      professorName = "John Doe";
-      professorEmail = "example@example.com";
+      const roleRes = await fetch(`${process.env.BACKEND_URL}/auth/role`, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
+      if (roleRes.ok) {
+        const roleData = await roleRes.json();
+        isProfessor = roleData.role === "professor";
+        professorName = data.name;
+        professorEmail = data.email;
+      }
     }
   }
 
