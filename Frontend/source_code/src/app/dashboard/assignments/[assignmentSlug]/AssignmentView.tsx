@@ -56,6 +56,7 @@ import type {
   CourseInfo,
   Submission,
   SimilarityReport,
+  RepoUpload,
 } from "./page";
 import {
   mapReport,
@@ -747,10 +748,12 @@ function ViewResourcesDialog({
   open,
   onClose,
   boilerplateFilename,
+  repoUploads,
 }: {
   open: boolean;
   onClose: () => void;
   boilerplateFilename: string | null;
+  repoUploads: RepoUpload[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -774,11 +777,25 @@ function ViewResourcesDialog({
               )}
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-slate-800">Repository</p>
-              <p className="text-xs text-muted-foreground">Not working yet!</p>
-            </div>
+          <div className="rounded-lg border bg-slate-50 px-4 py-3">
+            <p className="text-sm font-medium text-slate-800 mb-2">Repository Files</p>
+            {repoUploads.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No files uploaded</p>
+            ) : (
+              <div className="max-h-[180px] overflow-y-auto space-y-1.5 pr-1">
+                {repoUploads.map((upload) => (
+                  <div
+                    key={upload.upload_id}
+                    className="flex items-center justify-between gap-3 rounded-md bg-white border px-3 py-1.5"
+                  >
+                    <span className="font-mono text-xs text-slate-700 truncate">{upload.filename}</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
+                      {formatDate(upload.uploaded_at)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>
@@ -964,12 +981,14 @@ export function AssignmentView({
   initialReports,
   initialRepoReports,
   initialBoilerplateFilename,
+  initialRepoUploads,
 }: {
   assignment: AssignmentDetail;
   course: CourseInfo;
   initialReports: SimilarityReport[];
   initialRepoReports: SimilarityReport[];
   initialBoilerplateFilename: string | null;
+  initialRepoUploads: RepoUpload[];
 }) {
   const router = useRouter();
 
@@ -997,6 +1016,7 @@ export function AssignmentView({
   const [boilerplateFilename, setBoilerplateFilename] = useState<string | null>(
     initialBoilerplateFilename,
   );
+  const [repoUploads, setRepoUploads] = useState<RepoUpload[]>(initialRepoUploads);
 
   const submissions = assignment.submissions;
 
@@ -1349,6 +1369,7 @@ export function AssignmentView({
         open={viewResourcesOpen}
         onClose={() => setViewResourcesOpen(false)}
         boilerplateFilename={boilerplateFilename}
+        repoUploads={repoUploads}
       />
 
       <ExportConfirmDialog
@@ -1437,6 +1458,14 @@ export function AssignmentView({
           if (!res.ok) {
             throw new Error(data.message ?? "Upload failed. Please try again.");
           }
+          setRepoUploads((prev) => [
+            ...prev,
+            {
+              upload_id: crypto.randomUUID(),
+              filename: file.name,
+              uploaded_at: new Date().toISOString(),
+            },
+          ]);
           return {
             details: [
               {

@@ -36,6 +36,12 @@ export type CourseInfo = {
 };
 
 // Matches the actual API response shape from GET /engine/similarity-report-student?submission_id=
+export type RepoUpload = {
+  upload_id: string;
+  filename: string;
+  uploaded_at: string;
+};
+
 export type SimilarityReport = {
   // Submission identifiers (camelCase as returned by API)
   submissionA: string;
@@ -108,6 +114,26 @@ async function getCourse(token: string, courseId: string): Promise<CourseInfo> {
   if (!res.ok) throw new Error("Failed to fetch course.");
 
   return res.json();
+}
+
+async function getRepoUploads(
+  token: string,
+  assignmentId: string,
+): Promise<RepoUpload[]> {
+  const res = await fetch(
+    `${process.env.BACKEND_URL}/submissions/repo/uploads/${assignmentId}`,
+    {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    },
+  );
+  if (res.status === 401) redirect("/");
+  if (res.status === 404 || !res.ok) return [];
+  const data = await res.json();
+  return data?.uploads ?? [];
 }
 
 async function getBoilerplate(
@@ -257,11 +283,12 @@ export default async function AssignmentPage({
   const assignment = await getAssignment(token, assignmentSlug);
   if (assignment === null) notFound();
 
-  const [course, initialReports, initialRepoReports, initialBoilerplateFilename] = await Promise.all([
+  const [course, initialReports, initialRepoReports, initialBoilerplateFilename, initialRepoUploads] = await Promise.all([
     getCourse(token, assignment.course_id),
     getReports(token, assignment.submissions),
     getRepoReports(token, assignment.submissions),
     getBoilerplate(token, assignment.assignment_id),
+    getRepoUploads(token, assignment.assignment_id),
   ]);
 
   return (
@@ -271,6 +298,7 @@ export default async function AssignmentPage({
       initialReports={initialReports}
       initialRepoReports={initialRepoReports}
       initialBoilerplateFilename={initialBoilerplateFilename}
+      initialRepoUploads={initialRepoUploads}
     />
   );
 }
