@@ -59,8 +59,8 @@ def _delete_s3_object_if_exists(bucket: str, key: str) -> None:
             return
         raise
 
-@router.get("/repo/uploads")
-def get_uploads(user: dict = Depends(get_current_user)):
+@router.get("/repo/uploads/{assignment_id}")
+def get_uploads(assignment_id: UUID, user: dict = Depends(get_current_user)):
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can view repository uploads")
 
@@ -70,10 +70,10 @@ def get_uploads(user: dict = Depends(get_current_user)):
             SELECT ru.upload_id, ru.filename, ru.uploaded_at
             FROM repository_uploads ru
             JOIN repositories r ON r.repository_id = ru.repository_id
-            WHERE r.owner_id = %s
+            WHERE r.owner_id = %s AND r.assignment_id = %s
             ORDER BY ru.uploaded_at DESC
             """,
-            (str(user["user_id"]),),
+            (str(user["user_id"]), str(assignment_id)),
         ).fetchall()
 
     return {
