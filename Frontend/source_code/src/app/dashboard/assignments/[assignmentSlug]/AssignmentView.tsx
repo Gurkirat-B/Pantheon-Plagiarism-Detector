@@ -642,7 +642,9 @@ function ReportListDialog({
       r.submissionB === submission.submission_id,
   );
   const defaultTab: "current" | "repo" =
-    studentMatching.length === 0 && repoMatching.length > 0 ? "repo" : "current";
+    studentMatching.length === 0 && repoMatching.length > 0
+      ? "repo"
+      : "current";
   const tab = manualTab ?? defaultTab;
   const matching = tab === "current" ? studentMatching : repoMatching;
 
@@ -771,25 +773,33 @@ function ViewResourcesDialog({
                 Boilerplate Code
               </p>
               {boilerplateFilename ? (
-                <p className="font-mono text-xs text-slate-600">{boilerplateFilename}</p>
+                <p className="font-mono text-xs text-slate-600">
+                  {boilerplateFilename}
+                </p>
               ) : (
-                <p className="text-xs text-muted-foreground">No file uploaded</p>
+                <p className="text-xs text-muted-foreground">
+                  No file uploaded
+                </p>
               )}
             </div>
           </div>
           <div className="rounded-lg border bg-slate-50 px-4 py-3">
-            <p className="text-sm font-medium text-slate-800 mb-2">Repository Files</p>
+            <p className="mb-2 text-sm font-medium text-slate-800">
+              Repository Files
+            </p>
             {repoUploads.length === 0 ? (
               <p className="text-xs text-muted-foreground">No files uploaded</p>
             ) : (
-              <div className="max-h-[180px] overflow-y-auto space-y-1.5 pr-1">
+              <div className="max-h-[180px] space-y-1.5 overflow-y-auto pr-1">
                 {repoUploads.map((upload) => (
                   <div
                     key={upload.upload_id}
-                    className="flex items-center justify-between gap-3 rounded-md bg-white border px-3 py-1.5"
+                    className="flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-1.5"
                   >
-                    <span className="font-mono text-xs text-slate-700 truncate">{upload.filename}</span>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
+                    <span className="truncate font-mono text-xs text-slate-700">
+                      {upload.filename}
+                    </span>
+                    <span className="flex-shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                       {formatDate(upload.uploaded_at)}
                     </span>
                   </div>
@@ -993,7 +1003,8 @@ export function AssignmentView({
   const router = useRouter();
 
   const [reports, setReports] = useState<SimilarityReport[]>(initialReports);
-  const [repoReports, setRepoReports] = useState<SimilarityReport[]>(initialRepoReports);
+  const [repoReports, setRepoReports] =
+    useState<SimilarityReport[]>(initialRepoReports);
   const [comparingAll, setComparingAll] = useState(false);
   const [comparingRepo, setComparingRepo] = useState(false);
   const [report, setReport] = useState<ComparisonReport | null>(null);
@@ -1016,7 +1027,8 @@ export function AssignmentView({
   const [boilerplateFilename, setBoilerplateFilename] = useState<string | null>(
     initialBoilerplateFilename,
   );
-  const [repoUploads, setRepoUploads] = useState<RepoUpload[]>(initialRepoUploads);
+  const [repoUploads, setRepoUploads] =
+    useState<RepoUpload[]>(initialRepoUploads);
 
   const submissions = assignment.submissions;
 
@@ -1310,9 +1322,7 @@ export function AssignmentView({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  disabled={
-                    comparingAll || comparingRepo || submissions.length < 2
-                  }
+                  disabled={comparingAll || comparingRepo}
                   className="gap-2"
                 >
                   {comparingAll || comparingRepo ? (
@@ -1326,7 +1336,9 @@ export function AssignmentView({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  disabled={comparingAll || comparingRepo}
+                  disabled={
+                    comparingAll || comparingRepo || submissions.length < 2
+                  }
                   onClick={handleCompareAll}
                 >
                   Current submissions
