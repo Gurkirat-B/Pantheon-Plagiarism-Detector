@@ -1,0 +1,20 @@
+April 6, 2026
+
+General
+- Went over testing
+- Talked about submission files
+- Everyone needs to learn how the ENGINE / BACKEND / FRONTEND work for the meeting
+- Work on the slideshow on PowerPoint
+
+
+UI
+- Removed change email from Prof View
+- Fixed customer support page
+
+
+Backend
+- Add api to change password / delete account DONE
+- Security 
+- Fixed the issue with the student submission name
+- Add backend to show the boilerplate code for UI
+- Change session ID back to a single session ID
