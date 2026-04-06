@@ -30,6 +30,15 @@ class GetUserResponse(BaseModel):
     email: EmailStr
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
 def register_user(conn, name, email, role, password=None):
     hashed_password = hash_password(password) if password else None
     row = conn.execute(
@@ -152,3 +161,86 @@ def get_my_account(user: dict = Depends(get_current_user)):
         "name": row[0],
         "email": row[1],
     }
+
+
+@router.post("/change-password")
+def change_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    """
+    Allow a logged-in professor to change their password.
+    Requires the current password for verification.
+    """
+    if user["role"] != "professor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only professors can change their password"
+        )
+
+    if not body.new_password:
+        raise HTTPException(status_code=400, detail="New password cannot be empty")
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE user_id = %s",
+            (user["user_id"],)
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        if not verify_password(body.current_password, row[0]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password is incorrect"
+            )
+
+        new_hash = hash_password(body.new_password)
+        conn.execute(
+            "UPDATE users SET password_hash = %s WHERE user_id = %s",
+            (new_hash, user["user_id"])
+        )
+        conn.commit()
+
+    return {"message": "Password changed successfully"}
+
+
+@router.delete("/delete-account")
+def delete_account(body: DeleteAccountRequest, user: dict = Depends(get_current_user)):
+    """
+    Allow a logged-in professor to permanently delete their account.
+    Requires the current password for verification.
+    Cascades to related rows via ON DELETE CASCADE in the schema.
+    """
+    if user["role"] != "professor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only professors can delete their account"
+        )
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE user_id = %s",
+            (user["user_id"],)
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        if not verify_password(body.password, row[0]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Password is incorrect"
+            )
+
+        conn.execute(
+            "DELETE FROM users WHERE user_id = %s",
+            (user["user_id"],)
+        )
+        conn.commit()
+
+    return {"message": "Account deleted successfully"}

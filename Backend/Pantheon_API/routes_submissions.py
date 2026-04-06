@@ -312,8 +312,9 @@ def get_boilerplate(
     with get_db_connection() as conn:
         row = conn.execute(
             """
-            SELECT ab.name
+            SELECT ab.name, a.s3_bucket, a.s3_key
             FROM assignment_boilerplate ab
+            JOIN artifacts a ON a.artifact_id = ab.artifact_id
             JOIN repositories r ON r.assignment_id = ab.assignment_id
             WHERE ab.assignment_id = %s
               AND r.owner_id = %s
@@ -324,7 +325,29 @@ def get_boilerplate(
     if not row:
         raise HTTPException(status_code=404, detail="No boilerplate found for this assignment")
 
-    return {"filename": row[0]}
+    filename, bucket, key = row
+
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        file_bytes = obj["Body"].read()
+    except ClientError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch boilerplate from S3: {e}")
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            inner_names = [
+                info.filename for info in z.infolist()
+                if not info.filename.endswith("/")
+                and not info.filename.lower().startswith("__macosx/")
+                and not info.filename.lower().endswith(".ds_store")
+            ]
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=500, detail="Stored boilerplate is not a valid .zip archive")
+
+    return {
+        "filename": filename,
+        "files": inner_names,
+    }
 
 @router.get("/{assignment_id}/export")
 def export_submissions(
