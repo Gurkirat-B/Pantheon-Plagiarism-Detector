@@ -1,4 +1,5 @@
-import { ScrollText } from "lucide-react";
+import { ArrowLeft, ScrollText } from "lucide-react";
+import Link from "next/link";
 
 const SECTIONS = [
   {
@@ -16,7 +17,9 @@ const SECTIONS = [
     title: "Use of Service",
     content: (
       <ul>
-        <li>Our service is intended solely for detecting plagiarism in code.</li>
+        <li>
+          Our service is intended solely for detecting plagiarism in code.
+        </li>
         <li>
           You agree not to misuse the service or attempt to access it in an
           unauthorized manner.
@@ -77,7 +80,17 @@ const SECTIONS = [
 export default function TermsPage() {
   return (
     <main className="relative min-h-screen bg-white">
-      <section className="mx-auto max-w-3xl px-6 pb-10 pt-16 text-center">
+      <div className="mx-auto max-w-3xl px-6 pt-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-none"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to home
+        </Link>
+      </div>
+
+      <section className="mx-auto max-w-3xl px-6 pb-10 pt-10 text-center">
         <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
           <ScrollText className="h-5 w-5 text-slate-700" strokeWidth={1.5} />
         </div>

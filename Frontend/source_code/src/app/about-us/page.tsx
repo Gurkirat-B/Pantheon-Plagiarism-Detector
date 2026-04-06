@@ -1,9 +1,20 @@
-import { Shield, BarChart3 } from "lucide-react";
+import { Shield, BarChart3, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export default function AboutUsPage() {
   return (
     <main className="min-h-screen bg-background">
-      <section className="relative mx-auto max-w-4xl px-6 pb-8 pt-20 text-center">
+      <div className="mx-auto max-w-5xl px-6 pt-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-none"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to home
+        </Link>
+      </div>
+
+      <section className="relative mx-auto max-w-4xl px-6 pb-8 pt-12 text-center">
         {/* Eyebrow pill */}
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-[#d40f0d]" />

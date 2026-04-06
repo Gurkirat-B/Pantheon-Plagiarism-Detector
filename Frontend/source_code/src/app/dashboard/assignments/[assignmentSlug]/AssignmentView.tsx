@@ -21,6 +21,8 @@ import {
   Download,
   FolderOpen,
   Loader2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -620,13 +622,15 @@ function ReportListDialog({
   onOpenReport: (sr: SimilarityReport) => void;
 }) {
   const [manualTab, setManualTab] = useState<"current" | "repo" | null>(null);
+  const [sortAsc, setSortAsc] = useState(false);
   const [prevSubmissionId, setPrevSubmissionId] = useState<string | null>(null);
 
-  // Synchronously reset manual tab when submission changes — avoids post-render flicker
+  // Synchronously reset manual tab and sort when submission changes — avoids post-render flicker
   const currentId = submission?.submission_id ?? null;
   if (currentId !== prevSubmissionId) {
     setPrevSubmissionId(currentId);
     setManualTab(null);
+    setSortAsc(false);
   }
 
   if (!submission) return null;
@@ -646,7 +650,12 @@ function ReportListDialog({
       ? "repo"
       : "current";
   const tab = manualTab ?? defaultTab;
-  const matching = tab === "current" ? studentMatching : repoMatching;
+  const matchingRaw = tab === "current" ? studentMatching : repoMatching;
+  const matching = [...matchingRaw].sort((a, b) =>
+    sortAsc
+      ? a.similarityScore - b.similarityScore
+      : b.similarityScore - a.similarityScore,
+  );
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -655,26 +664,45 @@ function ReportListDialog({
           <DialogTitle>Reports for {submission.email}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex w-fit items-center rounded-lg border bg-muted p-1">
+        <div className="flex items-center justify-between">
+          <div className="flex w-fit items-center rounded-lg border bg-muted p-1">
+            <button
+              onClick={() => {
+                setManualTab("current");
+                setSortAsc(false);
+              }}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === "current"
+                  ? "bg-white text-slate-800 shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Current Submissions
+            </button>
+            <button
+              onClick={() => {
+                setManualTab("repo");
+                setSortAsc(false);
+              }}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === "repo"
+                  ? "bg-white text-slate-800 shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              With Repository
+            </button>
+          </div>
           <button
-            onClick={() => setManualTab("current")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              tab === "current"
-                ? "bg-white text-slate-800 shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            onClick={() => setSortAsc((v) => !v)}
+            className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            Current Submissions
-          </button>
-          <button
-            onClick={() => setManualTab("repo")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              tab === "repo"
-                ? "bg-white text-slate-800 shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            With Repository
+            {sortAsc ? (
+              <ArrowUp className="h-3 w-3" />
+            ) : (
+              <ArrowDown className="h-3 w-3" />
+            )}
+            Score
           </button>
         </div>
 
@@ -1186,7 +1214,7 @@ export function AssignmentView({
             10,
         ) / 10
       : null;
-  const highRisk = reports.filter((r) => r.similarityScore >= 80).length;
+  const highRisk = submissionsHighRisk.size;
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 min-[2000px]:max-w-[2000px]">
@@ -1255,7 +1283,7 @@ export function AssignmentView({
             <div>
               <p className="text-2xl font-bold text-slate-800">{highRisk}</p>
               <p className="text-sm text-muted-foreground">
-                High Risk (&ge;80%)
+                High Risk (&ge;80%) Submission{highRisk !== 1 ? "s" : ""}
               </p>
             </div>
           </CardContent>
