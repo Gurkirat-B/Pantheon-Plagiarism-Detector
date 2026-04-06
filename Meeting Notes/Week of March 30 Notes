@@ -19,33 +19,33 @@ General
 
 
 Backend
-  - Boiler plate code DONE
-  - Proffessor repo comparissons DONE
-  - Cleaning 
+  - Boilerplate code DONE
+  - Professor repo comparisons DONE
+  - Cleaning DONE
   - Security 
-  - Adding course change API DONE
+  - Adding course change API DONE 
   - Add logic to not add an assignment for an old date DONE
-  - Comparissons for previous year submissions DONE
+  - Comparisons for previous year submissions DONE
   - Add api for course change names DONE
   - Remove assignments/course/{course_id} api DONE
   - fix the language selector so it works DONE
-  - Add api to get course detail like course name, assignment, and prof name DOWN
+  - Add api to get course detail like course name, assignment, and prof name DONE
   - Add api to download repo to our computer DOWN
-  - Add api to get name names of the boiler plate code and repo
-  - Add api to change email / password / delete account
+  - Add api to get name names of the boilerplate code and repo DONE
+  - Add api to change email / password / delete account 
 
 
 UI
   - Compare all screens DONE
-  - Cleaning 
+  - Cleaning DONE
   - Testing all links DONE
-  - Working on line colour choices
+  - Working on line colour choices DONE
   - Adding Compare with button to compare with the repo and the corresponding screens DONE
   - Add boilerplate button DONE
   - Made mock-up for boilerplate button DONE
   - Made mock-up for compare with repo and import repo buttons DONE
-  - Made UI mock-up for the download repo to computer button
-  - Add help UI button which would show a pop up video on how to use the software MAYBE
+  - Made UI mock-up for the download repo to computer button DONE
+  - Add help UI button which would show a pop up video on how to use the software 
 
 
 Meeting with Dave
