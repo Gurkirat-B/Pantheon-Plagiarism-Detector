@@ -10,6 +10,7 @@ General
 UI
 - Removed change email from Prof View
 - Fixed customer support page
+- connect api to prof change password and delete account
 
 
 Backend
