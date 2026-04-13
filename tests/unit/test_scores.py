@@ -9,7 +9,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent.parent / "Backend" / "Pantheon_API"
 sys.path.insert(0, str(backend_path))
 
-from engine.similarity.scores import jaccard, containment, weighted_score
+from engine.similarity.scores import jaccard, containment, weighted_score, apply_pdg_modifier
 
 
 class TestSimilarityScores:
@@ -188,3 +188,82 @@ class TestSimilarityEdgeCases:
         fp_b = {0xDEADBEEF: [0, 5, 10]}
         score = jaccard(fp_a, fp_b)
         assert score == 1.0
+
+
+class TestWeightedScoreV2:
+    """Tests for the v2 formula with AST signals."""
+
+    def test_full_v2_formula_range(self):
+        """Full v2 path should return score in [0, 1]."""
+        fp = {0x1234: [0], 0x5678: [1]}
+        result = weighted_score(
+            fp, fp,
+            tok_a=None, tok_b=None,
+            ast_subtree_similarity=0.80,
+            method_pair_match=0.75,
+        )
+        assert 0.0 <= result["weighted_final"] <= 1.0
+
+    def test_full_v2_identical_near_one(self):
+        """Identical fingerprints + perfect AST signals should approach 1.0."""
+        fp = {0x1234: [0], 0x5678: [1]}
+        result = weighted_score(
+            fp, fp,
+            tok_a=None, tok_b=None,
+            ast_subtree_similarity=1.0,
+            method_pair_match=1.0,
+        )
+        assert result["weighted_final"] >= 0.90
+
+    def test_ast_signals_in_result(self):
+        """Result dict should contain ast_subtree and method_pair keys."""
+        fp = {0x1234: [0]}
+        result = weighted_score(
+            fp, fp,
+            tok_a=None, tok_b=None,
+            ast_subtree_similarity=0.80,
+            method_pair_match=0.70,
+        )
+        assert "ast_subtree" in result
+        assert "method_pair" in result
+
+    def test_fallback_no_ast_still_works(self, identical_fingerprints):
+        """Calling without AST signals should use the k-gram fallback."""
+        fp_a, fp_b = identical_fingerprints
+        result = weighted_score(fp_a, fp_b)
+        assert "weighted_final" in result
+        assert 0.0 <= result["weighted_final"] <= 1.0
+
+    def test_ast_raises_score_vs_no_ast(self, partial_overlap_fingerprints):
+        """Adding high AST signals should raise the weighted score."""
+        fp_a, fp_b = partial_overlap_fingerprints
+        result_no_ast  = weighted_score(fp_a, fp_b)
+        result_with_ast = weighted_score(
+            fp_a, fp_b,
+            ast_subtree_similarity=0.90,
+            method_pair_match=0.90,
+        )
+        assert result_with_ast["weighted_final"] >= result_no_ast["weighted_final"]
+
+
+class TestPDGModifierInScores:
+    """Tests for apply_pdg_modifier()."""
+
+    def test_high_pdg_raises_borderline_score(self):
+        base = apply_pdg_modifier(0.55, 0.90)
+        assert base > 0.55
+
+    def test_low_pdg_lowers_borderline_score(self):
+        base = apply_pdg_modifier(0.55, 0.10)
+        assert base < 0.55
+
+    def test_formula_correctness(self):
+        """Verify exact formula: base*0.80 + pdg*0.20."""
+        result = apply_pdg_modifier(0.60, 0.80)
+        expected = round(0.60 * 0.80 + 0.80 * 0.20, 4)
+        assert result == pytest.approx(expected, abs=0.001)
+
+    def test_always_in_range(self):
+        for base, pdg in [(0.0, 0.0), (1.0, 1.0), (0.5, 0.0), (0.0, 1.0)]:
+            final = apply_pdg_modifier(base, pdg)
+            assert 0.0 <= final <= 1.0

@@ -2,11 +2,48 @@
 This file looks at two submissions and tries to figure out if one was copied
 from the other but modified to look different. It runs 13 independent checks,
 each looking for a specific kind of modification students commonly use to hide
-plagiarism. Any checks that fire are returned as a list of flag names.
+plagiarism.
+
+v2 change: three of the 13 flags now emit structured dicts rather than plain
+strings. These are the flags that the PDG trigger logic in api.py reads. All
+other flags remain plain strings for backward compatibility.
+
+The three PDG-triggering flags are:
+  method_decomposition    — splitting one large function into smaller helpers
+  code_reordering         — functions shuffled to different positions in the file
+  loop_type_swap          — for-loops converted to while-loops or vice versa
+
+A flag is either:
+  "flag_name"                          (str)  — non-triggering flag, unchanged
+  {"flag": "flag_name", "pdg_trigger": True}  (dict) — PDG-triggering flag
+
+api.py uses _is_pdg_trigger_flag() to check either form.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Union
 from engine.tokenize.lex import Token
+
+# Type alias for the mixed list api.py receives
+ObfuscationFlag = Union[str, dict]
+
+
+def _pdg_flag(name: str) -> dict:
+    """Build a structured PDG-triggering flag dict."""
+    return {"flag": name, "pdg_trigger": True}
+
+
+def is_pdg_trigger_flag(flag: ObfuscationFlag) -> bool:
+    """Return True if *flag* is one of the three PDG-triggering structured flags."""
+    if isinstance(flag, dict):
+        return flag.get("pdg_trigger", False)
+    return False
+
+
+def flag_name(flag: ObfuscationFlag) -> str:
+    """Return the string name of a flag regardless of whether it is str or dict."""
+    if isinstance(flag, dict):
+        return flag.get("flag", "")
+    return flag
 
 
 def detect_obfuscation(
@@ -16,7 +53,7 @@ def detect_obfuscation(
     tok_b_norm: List[Token],
     fp_a_norm: Dict[int, List[int]],
     fp_b_norm: Dict[int, List[int]],
-) -> List[str]:
+) -> List[ObfuscationFlag]:
     """
     Takes two submissions in two forms each — the raw original tokens and a
     normalized version where all variable names are replaced with "ID" and all
@@ -53,7 +90,7 @@ def detect_obfuscation(
     a_loops = _count_loop_types(tok_a_raw)
     b_loops = _count_loop_types(tok_b_raw)
     if _loops_swapped(a_loops, b_loops) and norm_score > 0.3:
-        flags.append("loop_type_swap")
+        flags.append(_pdg_flag("loop_type_swap"))
 
     # Collect all the literal values (numbers and strings) from each submission.
     # If the code structure is similar but almost none of the literal values match,
@@ -95,7 +132,7 @@ def detect_obfuscation(
                 position_deltas.append(abs(pos_a - pos_b))
             avg_delta = sum(position_deltas) / len(position_deltas) if position_deltas else 0
             if avg_delta > 0.20:
-                flags.append("code_reordering")
+                flags.append(_pdg_flag("code_reordering"))
 
     # A switch statement and a chain of if-else statements can express the exact same
     # logic. If one submission uses switch and the other uses significantly more if
@@ -164,7 +201,7 @@ def detect_obfuscation(
         max_m = max(a_methods, b_methods)
         min_m = max(min(a_methods, b_methods), 1)
         if max_m / min_m > 1.8 and max_m >= 4:
-            flags.append("method_decomposition")
+            flags.append(_pdg_flag("method_decomposition"))
 
     # Logical conditions can be flipped using De Morgan's law: if (a > b) becomes
     # if (!(a <= b)). This adds negation operators without changing the meaning.

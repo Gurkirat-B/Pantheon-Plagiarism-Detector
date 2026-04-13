@@ -10,7 +10,10 @@ backend_path = Path(__file__).parent.parent.parent / "Backend" / "Pantheon_API"
 sys.path.insert(0, str(backend_path))
 
 from engine.tokenize.lex import Token
-from engine.fingerprint.kgrams import build_fingerprints, winnow
+from engine.fingerprint.kgrams import (
+    build_fingerprints, winnow,
+    select_k, build_per_function_fingerprints,
+)
 
 
 class TestFingerprinting:
@@ -247,3 +250,77 @@ class TestWinnowingEdgeCases:
         fp = winnow(tokens, k=1, window=1)
         # Should work, though not practical
         assert isinstance(fp, dict)
+
+
+class TestAdaptiveKSelection:
+    """Tests for per-function adaptive k selection table."""
+
+    def test_very_short_function_k3(self):
+        """Functions with < 20 tokens get k=3."""
+        assert select_k(5)  == 3
+        assert select_k(15) == 3
+        assert select_k(19) == 3
+
+    def test_short_function_k5(self):
+        """Functions with 20-49 tokens get k=5."""
+        assert select_k(20) == 5
+        assert select_k(35) == 5
+        assert select_k(49) == 5
+
+    def test_medium_function_k8(self):
+        """Functions with 50-149 tokens get k=8."""
+        assert select_k(50)  == 8
+        assert select_k(100) == 8
+        assert select_k(149) == 8
+
+    def test_large_function_k12(self):
+        """Functions with 150-299 tokens get k=12."""
+        assert select_k(150) == 12
+        assert select_k(200) == 12
+        assert select_k(299) == 12
+
+    def test_very_large_function_k15_to_k18(self):
+        """Functions with ≥300 tokens get k in [15, 18]."""
+        assert select_k(300) == 15
+        assert select_k(600) == 16
+        k_max = select_k(100_000)
+        assert k_max <= 18
+
+    def test_k_monotone_non_decreasing(self):
+        """Larger functions should never get smaller k."""
+        sizes = [5, 20, 50, 150, 300, 600, 1000]
+        ks = [select_k(s) for s in sizes]
+        for i in range(len(ks) - 1):
+            assert ks[i] <= ks[i + 1], f"k not monotone at {sizes[i]}: {ks[i]} > {ks[i+1]}"
+
+
+class TestPerFunctionFingerprints:
+    """Tests for build_per_function_fingerprints()."""
+
+    def _make_tokens(self, start_line: int, n: int) -> list:
+        """Create n dummy tokens starting at start_line."""
+        return [Token(f"tok{i}", start_line + (i // 5)) for i in range(n)]
+
+    def test_returns_dict(self):
+        tokens = self._make_tokens(1, 30)
+        func_map = {"foo": {"start_line": 1, "end_line": 6, "token_count": 30}}
+        result = build_per_function_fingerprints(tokens, func_map)
+        assert isinstance(result, dict)
+
+    def test_has_meta_key(self):
+        tokens = self._make_tokens(1, 30)
+        func_map = {"foo": {"start_line": 1, "end_line": 6, "token_count": 30}}
+        result = build_per_function_fingerprints(tokens, func_map)
+        assert "__meta__" in result
+
+    def test_meta_has_k_value(self):
+        tokens = self._make_tokens(1, 30)
+        func_map = {"foo": {"start_line": 1, "end_line": 6, "token_count": 30}}
+        result = build_per_function_fingerprints(tokens, func_map)
+        meta = result["__meta__"]
+        if "foo" in meta:
+            assert "k" in meta["foo"]
+
+    def test_empty_inputs_return_empty(self):
+        result = build_per_function_fingerprints([], {})
+        assert result == {}

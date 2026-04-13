@@ -1,28 +1,37 @@
 """
-This file computes how similar two submissions are to each other. Rather than
-relying on a single number, we compute four different similarity measures that
-each capture a slightly different aspect of similarity, then combine them into
-one weighted final score.
+Similarity scoring — v2 formula (ENGINE_DESIGN.md §7).
 
-Jaccard similarity is the fraction of fingerprints shared between two sets.
-It works well when submissions are roughly the same length, but underestimates
-similarity when one submission is much longer than the other.
+Base score (always computed, every pair):
 
-Containment similarity fixes that problem: instead of dividing by the union of
-both sets, it divides by the size of the smaller set. This means a small block
-of copied code still scores high even when it appears inside a much larger submission.
+    K-gram group (0.45 total):
+        Jaccard              × 0.10
+        Containment          × 0.20
+        Cosine               × 0.15
 
-Cosine similarity on token frequencies catches cases where the fingerprints
-diverge slightly (e.g. due to different variable names) but the overall
-vocabulary of tokens is still very similar.
+    AST group (0.45 total):
+        Subtree similarity   × 0.25
+        Method-pair match    × 0.20
 
-Structural cosine looks only at control-flow keywords like if, for, while,
-return, and try. Two programs that share the same algorithmic structure will
-have similar counts of these keywords even if everything else is different.
+    Supporting (0.10 total):
+        Structural cosine    × 0.10
+                              ──────
+        Base total            1.00
 
-The weighted final score is: jaccard×0.20 + containment×0.35 + cosine×0.30 + structural×0.15.
-Containment gets the highest weight because partial plagiarism (one student
-copying a function from another) is the most common pattern we need to catch.
+K-gram and AST groups carry exactly equal total weight (0.45 each). This is
+the central design decision — both are primary signals, neither can gate the
+other. A pair that scores near zero on k-grams but 0.72 on AST still lands
+in the suspicious range.
+
+PDG modifier (conditional, applied by apply_pdg_modifier()):
+    final_score = base_score × 0.80 + pdg_similarity × 0.20
+
+The individual metric functions (jaccard, containment, cosine_similarity_tokens,
+structural_cosine) are unchanged from v1. Only weighted_score() has new
+parameters for the AST signals.
+
+Fallback behaviour: if AST signals are not provided (e.g. tree-sitter unavailable
+or language unsupported), the AST group collapses to 0 and the k-gram group
+weights are scaled proportionally so the formula still sums to 1.0.
 """
 
 import math
@@ -129,22 +138,75 @@ def weighted_score(
     fp_b: Dict[int, List[int]],
     tok_a: Optional[List[str]] = None,
     tok_b: Optional[List[str]] = None,
+    ast_subtree_similarity: Optional[float] = None,
+    method_pair_match:      Optional[float] = None,
 ) -> dict:
     """
-    Compute all four similarity metrics and combine them into one weighted score.
-    If token lists are not provided, the cosine and structural components fall back
-    to zero and the weights for the remaining two metrics are adjusted proportionally.
+    Compute all similarity signals and combine them into a weighted base score.
+
+    v2 formula (ENGINE_DESIGN.md §7):
+        K-gram group  (0.45): jaccard×0.10 + containment×0.20 + cosine×0.15
+        AST group     (0.45): subtree×0.25 + method_pair×0.20
+        Supporting    (0.10): structural_cosine×0.10
+
+    Fallback when AST signals are absent:
+        The 0.45 AST weight is redistributed to the k-gram group proportionally:
+        jaccard×0.16 + containment×0.32 + cosine×0.24 + structural×0.28
+        (ratios preserved relative to original v1 formula)
+
+    Fallback when token lists are absent (no cosine/structural):
+        Only jaccard and containment are used, scaled to sum to 1.
+
+    Args:
+        fp_a, fp_b:              Winnowed fingerprint dicts from kgrams.winnow()
+        tok_a, tok_b:            Normalized token lists (for cosine/structural)
+        ast_subtree_similarity:  Output of subtree.subtree_similarity() in [0,1]
+        method_pair_match:       Output of method_match.best_match_score() in [0,1]
+
+    Returns:
+        Dict with individual scores and 'weighted_final' (base score, no PDG).
     """
     j = jaccard(fp_a, fp_b)
     c = containment(fp_a, fp_b)
 
-    if tok_a is not None and tok_b is not None:
-        cos = cosine_similarity_tokens(tok_a, tok_b)
-        struct = structural_cosine(tok_a, tok_b)
-        final = round(0.20 * j + 0.35 * c + 0.30 * cos + 0.15 * struct, 4)
+    has_tokens = tok_a is not None and tok_b is not None
+    has_ast    = ast_subtree_similarity is not None and method_pair_match is not None
+
+    cos    = cosine_similarity_tokens(tok_a, tok_b) if has_tokens else None
+    struct = structural_cosine(tok_a, tok_b)        if has_tokens else None
+
+    if has_ast and has_tokens:
+        # Full v2 formula
+        final = round(
+            0.10 * j
+            + 0.20 * c
+            + 0.15 * cos
+            + 0.25 * ast_subtree_similarity
+            + 0.20 * method_pair_match
+            + 0.10 * struct,
+            4,
+        )
+    elif has_ast and not has_tokens:
+        # AST available, no token lists
+        final = round(
+            0.15 * j
+            + 0.30 * c
+            + 0.25 * ast_subtree_similarity
+            + 0.20 * method_pair_match,
+            4,
+        )
+    elif not has_ast and has_tokens:
+        # Fallback: no AST — redistribute 0.45 AST weight to k-gram group
+        # (preserves relative k-gram weights from v1)
+        final = round(
+            0.16 * j
+            + 0.32 * c
+            + 0.24 * cos
+            + 0.28 * struct,
+            4,
+        )
     else:
-        cos = None
-        struct = None
+        # Minimal fallback: only jaccard + containment
         final = round(0.36 * j + 0.64 * c, 4)
 
     result = {
@@ -155,4 +217,31 @@ def weighted_score(
     if cos is not None:
         result["cosine"]     = round(cos, 4)
         result["structural"] = round(struct, 4)
+    if has_ast:
+        result["ast_subtree"]   = round(ast_subtree_similarity, 4)
+        result["method_pair"]   = round(method_pair_match, 4)
     return result
+
+
+def apply_pdg_modifier(base_score: float, pdg_similarity: float) -> float:
+    """
+    Apply the PDG modifier to a base score.
+
+    Formula (ENGINE_DESIGN.md §7):
+        final = base_score × 0.80 + pdg_similarity × 0.20
+
+    The 80/20 split means PDG can meaningfully shift a borderline result
+    without overriding the primary signals. A pair at 0.55 base score
+    that PDG scores at 0.90 would land at 0.62 — clearly suspicious.
+    A pair at 0.55 that PDG scores at 0.10 would land at 0.46 — clears suspicion.
+
+    This is only called from api.py when the PDG trigger conditions are met.
+
+    Args:
+        base_score:     The weighted_final from weighted_score().
+        pdg_similarity: Output of pdg.compare.pdg_similarity() in [0.0, 1.0].
+
+    Returns:
+        float in [0.0, 1.0]
+    """
+    return round(min(base_score * 0.80 + pdg_similarity * 0.20, 1.0), 4)

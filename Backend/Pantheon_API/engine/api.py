@@ -6,6 +6,22 @@ batch_analyze() scores every possible pair within a set of submissions and retur
 them ranked from most to least suspicious.
 
     from engine.api import compare, batch_analyze
+
+v2 pipeline (ENGINE_DESIGN.md §3):
+
+    Phase 1  — AST parse (always, sequential — both Phase 2 passes need its output)
+               Extracts function boundaries, call graph, complexity.
+
+    Phase 2A — Adaptive k-gram (always, parallel with Phase 2B)
+               Per-function adaptive k (Pass 1) + global (Pass 2) + loop-normalised (Pass 3)
+
+    Phase 2B — AST comparison (always, parallel with Phase 2A)
+               Subtree hashing + method-pair best-match + call graph comparison
+
+    Base score = weighted_score(kgram_signals + AST_signals)
+
+    Phase 3  — PDG (conditional — triggered by 3 conditions, see _should_trigger_pdg())
+               Modifies final score if triggered: final = base×0.80 + pdg×0.20
 """
 
 import shutil
@@ -21,10 +37,18 @@ from engine.preprocess.canonicalize import canonicalize
 from engine.preprocess.stdlib_filter import blank_output_boilerplate
 from engine.preprocess.strip_comments import strip_comments
 from engine.tokenize.lex import tokenize
-from engine.fingerprint.kgrams import winnow, build_fingerprints
-from engine.similarity.scores import weighted_score
-from engine.evidence.evidence import build_evidence
-from engine.obfuscation.detect import detect_obfuscation
+from engine.fingerprint.kgrams import winnow, build_fingerprints, build_per_function_fingerprints
+from engine.similarity.scores import weighted_score, apply_pdg_modifier
+from engine.evidence.evidence import build_evidence, build_ast_evidence
+from engine.obfuscation.detect import detect_obfuscation, is_pdg_trigger_flag, flag_name
+# AST imports — used in Phase 1 and Phase 2B
+from engine.ast.parse import parse_submission
+from engine.ast.subtree import compute_subtree_hashes, subtree_similarity
+from engine.ast.method_match import per_method_hashes, best_match_score
+from engine.ast.callgraph import compare_callgraphs
+# PDG imports — used in Phase 3 (conditional)
+from engine.pdg.build import build_pdg_features
+from engine.pdg.compare import pdg_similarity
 
 # k is the chunk size used by the Winnowing fingerprinting algorithm — it controls
 # how many consecutive tokens must match before we call it a shared sequence.
@@ -40,10 +64,9 @@ _W_SHORT = 3
 
 def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str = "mixed"):
     """
-    Runs the full preparation pipeline on one submission: extracts the files from
-    the archive, cleans them up, and converts them into fingerprints ready for
-    comparison. This is done once per submission upfront so the work isn't repeated
-    for every pair in a batch.
+    Runs the full preparation pipeline on one submission: ingests files, cleans
+    them, converts to fingerprints, and now also runs AST Phase 1 to build the
+    function boundary map that Phase 2A and 2B both need.
     """
     path = Path(path)
     _, detected_lang, source_files = ingest_to_dir(path, work_dir)
@@ -51,54 +74,64 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
 
     canon = canonicalize(source_files, work_dir, lang=lang)
 
-    # Build a second version of the text with I/O calls and main() blanked out.
-    # This version is used for fingerprinting only — the original is kept for the
-    # display view shown to instructors. Blanking (replacing with empty lines) rather
-    # than deleting ensures all line numbers stay exactly where they were.
     fp_text = blank_output_boilerplate(canon.canonical_text, lang)
 
-    # Normalized tokens replace variable names with "ID", numbers with "NUM", etc.
-    # Two submissions with the same structure but different variable names will
-    # produce identical normalized token streams, which is exactly what we want
-    # for fingerprinting — we care about structure, not what the variables are called.
     tok_norm = tokenize(fp_text, lang=lang,
                         normalize_ids=True, normalize_literals=True,
                         normalize_access=True)
 
-    # Raw tokens keep everything as written, so the obfuscation detector can see
-    # what the student actually named their variables and what values they used.
     tok_raw = tokenize(fp_text, lang=lang,
                        normalize_ids=False, normalize_literals=False,
                        normalize_access=False)
 
-    # Cap at 50,000 tokens to protect against maliciously large files. Without a cap,
-    # the fingerprinting step runs in O(n²) time and a large enough file could
-    # consume all available memory and crash the server.
     tok_norm = tok_norm[:50000]
     tok_raw  = tok_raw[:50000]
 
-    # Scale the chunk size based on how long the submission is. A very short submission
-    # (like a single small function) might produce zero fingerprints at k=10 because
-    # it simply doesn't have 10-token sequences to match. Scaling k down ensures we
-    # still get fingerprint coverage even for tiny submissions.
     n_tokens = len(tok_norm)
     dyn_k = max(8, min(15, n_tokens // 200))
     dyn_w = max(4, min(8, dyn_k // 2))
 
-    fp       = winnow(tok_norm, k=dyn_k, window=dyn_w)  # compact set used for scoring
-    fp_full  = build_fingerprints(tok_norm, k=12)         # full coverage used for evidence
-    fp_short = build_fingerprints(tok_norm, k=_K_SHORT)   # smaller chunks for short methods
+    fp       = winnow(tok_norm, k=dyn_k, window=dyn_w)
+    fp_full  = build_fingerprints(tok_norm, k=12)
+    fp_short = build_fingerprints(tok_norm, k=_K_SHORT)
+
+    # ── Phase 1: AST parse — build function boundary map and call graph ──
+    # parse_submission reads the original source files (before canonicalization)
+    # so it sees real identifiers, not normalized tokens. This is intentional:
+    # tree-sitter needs real syntax, not our token stream.
+    ast_result = parse_submission(source_files, lang)
+
+    # ── Per-function adaptive k fingerprints (Phase 2A Pass 1) ──
+    # Built here alongside the other fingerprints so the result dict is complete.
+    fp_per_func = build_per_function_fingerprints(
+        tok_norm, ast_result["functions"]
+    ) if ast_result["parse_ok"] else {}
+
+    # ── Subtree hashes for Phase 2B ──
+    # compute_subtree_hashes works on the canonical (filtered) text, not the
+    # raw source, so boilerplate doesn't pollute the structural hashes.
+    subtree_hashes = compute_subtree_hashes(fp_text, lang)
+
+    # ── Per-method hashes for Phase 2B method-pair matching ──
+    method_hashes = per_method_hashes(fp_text, lang)
 
     return {
-        "lang":     lang,
-        "canon":    canon,
-        "tok_norm": tok_norm,
-        "tok_raw":  tok_raw,
-        "fp":       fp,
-        "fp_full":  fp_full,
-        "fp_short": fp_short,
-        "dyn_k":    dyn_k,
-        "dyn_w":    dyn_w,
+        "lang":          lang,
+        "canon":         canon,
+        "tok_norm":      tok_norm,
+        "tok_raw":       tok_raw,
+        "fp":            fp,
+        "fp_full":       fp_full,
+        "fp_short":      fp_short,
+        "dyn_k":         dyn_k,
+        "dyn_w":         dyn_w,
+        # Phase 1 outputs
+        "ast_result":    ast_result,       # {functions, call_graph, parse_ok}
+        "fp_per_func":   fp_per_func,      # per-function fingerprints
+        # Phase 2B inputs
+        "subtree_hashes": subtree_hashes,  # SubtreeHashes object
+        "method_hashes":  method_hashes,   # {func_name: SubtreeHashes}
+        "source_files":   source_files,    # original Path list for PDG
     }
 
 
@@ -147,13 +180,84 @@ def compare(
             template_fp = _get_template_fingerprints(template_path, workdir / "template")
             fp_a = _subtract_fingerprints(fp_a, template_fp)
 
-        scores = weighted_score(fp_a, fp_b, tok_a=proc_a["tok_norm"], tok_b=proc_b["tok_norm"])
+        # ── Phase 2A + 2B: run in parallel ──
+        # Both phases depend on Phase 1 (ast_result), which is already done inside
+        # _process_submission(). We parallelise the heavy per-pair work here.
+        with ThreadPoolExecutor(max_workers=2) as pool:
 
-        # When two submissions are very similar, the fingerprinting algorithm leaves
-        # small gaps between matched regions where a single different token broke a
-        # k-gram chain. We merge blocks that are close together to fill those gaps.
-        # The higher the similarity, the larger a gap we're willing to close.
+            # Phase 2B: AST comparison signals
+            def _run_ast_phase():
+                ast_sub   = subtree_similarity(proc_a["subtree_hashes"], proc_b["subtree_hashes"])
+                meth_pair = best_match_score(proc_a["method_hashes"],  proc_b["method_hashes"])
+                cg_sim    = compare_callgraphs(
+                    proc_a["ast_result"]["call_graph"],
+                    proc_b["ast_result"]["call_graph"],
+                )
+                return ast_sub, meth_pair, cg_sim
+
+            # Phase 2A: k-gram scoring (uses existing winnow fingerprints)
+            def _run_kgram_phase():
+                return weighted_score(
+                    fp_a, fp_b,
+                    tok_a=proc_a["tok_norm"],
+                    tok_b=proc_b["tok_norm"],
+                    # AST signals fed in after the AST future resolves below
+                )
+
+            fut_ast   = pool.submit(_run_ast_phase)
+            fut_kgram = pool.submit(_run_kgram_phase)
+
+            kgram_scores          = fut_kgram.result()
+            ast_sub, meth_pair, cg_sim = fut_ast.result()
+
+        # ── Combined base score (Phase 2A + 2B signals together) ──
+        scores = weighted_score(
+            fp_a, fp_b,
+            tok_a=proc_a["tok_norm"],
+            tok_b=proc_b["tok_norm"],
+            ast_subtree_similarity=ast_sub,
+            method_pair_match=meth_pair,
+        )
+        scores["callgraph_sim"] = round(cg_sim, 4)
+
         final = scores["weighted_final"]
+
+        # ── Obfuscation detection ──
+        obfuscation_flags = detect_obfuscation(
+            tok_a_raw=proc_a["tok_raw"],
+            tok_b_raw=proc_b["tok_raw"],
+            tok_a_norm=proc_a["tok_norm"],
+            tok_b_norm=proc_b["tok_norm"],
+            fp_a_norm=fp_a,
+            fp_b_norm=fp_b,
+        )
+
+        # ── Phase 3: PDG trigger evaluation ──
+        pdg_triggered = False
+        pdg_sim       = None
+        triggered_by  = None
+
+        if _should_trigger_pdg(scores, obfuscation_flags):
+            triggered_by = _pdg_trigger_reason(scores, obfuscation_flags)
+            # Build PDG from original source files (need real syntax for tree-sitter)
+            src_a = "\n".join(
+                p.read_text(encoding="utf-8", errors="replace")
+                for p in proc_a["source_files"] if p.is_file()
+            )
+            src_b = "\n".join(
+                p.read_text(encoding="utf-8", errors="replace")
+                for p in proc_b["source_files"] if p.is_file()
+            )
+            feats_a = build_pdg_features(src_a, lang)
+            feats_b = build_pdg_features(src_b, lang)
+            pdg_sim = pdg_similarity(feats_a, feats_b)
+
+            final   = apply_pdg_modifier(final, pdg_sim)
+            scores["pdg_similarity"] = round(pdg_sim, 4)
+            scores["weighted_final"] = final
+            pdg_triggered = True
+
+        # ── Evidence building ──
         if final >= 0.90:
             merge_gap = 20
         elif final >= 0.70:
@@ -161,67 +265,63 @@ def compare(
         else:
             merge_gap = 3
 
-        # Primary evidence pass: chunks of 12 tokens — catches any shared sequence
-        # of roughly 5-6 lines or more.
+        # Primary k-gram evidence pass (k=12)
         evidence = build_evidence(
             proc_a["fp_full"], proc_b["fp_full"],
             tok_a=proc_a["tok_norm"],
             tok_b=proc_b["tok_norm"],
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
-            k=12,
-            merge_gap=merge_gap,
-            work_dir_a=dir_a,
-            work_dir_b=dir_b,
+            k=12, merge_gap=merge_gap,
+            work_dir_a=dir_a, work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
             canonical_text_b=proc_b["canon"].canonical_text,
-            lang=lang,
+            lang=lang, evidence_source="kgram",
         )
 
-        # Short-method pass: smaller chunks of 5 tokens — catches shared code in
-        # very short helper functions that the primary pass would miss entirely.
+        # Short-method pass (k=5)
         evidence_short = build_evidence(
             proc_a["fp_short"], proc_b["fp_short"],
             tok_a=proc_a["tok_norm"],
             tok_b=proc_b["tok_norm"],
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
-            k=_K_SHORT,
-            merge_gap=merge_gap,
-            work_dir_a=dir_a,
-            work_dir_b=dir_b,
+            k=_K_SHORT, merge_gap=merge_gap,
+            work_dir_a=dir_a, work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
             canonical_text_b=proc_b["canon"].canonical_text,
-            lang=lang,
+            lang=lang, evidence_source="kgram_short",
         )
 
-        # Loop-normalized pass: replace for/while/do with a generic LOOP token before
-        # fingerprinting. This catches cases where one student converted every for-loop
-        # to a while-loop — the structure is identical but the primary pass won't
-        # match because the keyword is different.
+        # Loop-normalized pass
         tok_loop_a = _normalize_loops(proc_a["tok_norm"])
         tok_loop_b = _normalize_loops(proc_b["tok_norm"])
-        fp_loop_a = build_fingerprints(tok_loop_a, k=12)
-        fp_loop_b = build_fingerprints(tok_loop_b, k=12)
+        fp_loop_a  = build_fingerprints(tok_loop_a, k=12)
+        fp_loop_b  = build_fingerprints(tok_loop_b, k=12)
         evidence_loop = build_evidence(
             fp_loop_a, fp_loop_b,
-            tok_a=tok_loop_a,
-            tok_b=tok_loop_b,
+            tok_a=tok_loop_a, tok_b=tok_loop_b,
             source_map_a=proc_a["canon"].source_map,
             source_map_b=proc_b["canon"].source_map,
-            k=12,
-            merge_gap=merge_gap,
-            work_dir_a=dir_a,
-            work_dir_b=dir_b,
+            k=12, merge_gap=merge_gap,
+            work_dir_a=dir_a, work_dir_b=dir_b,
             canonical_text_a=proc_a["canon"].canonical_text,
             canonical_text_b=proc_b["canon"].canonical_text,
-            lang=lang,
+            lang=lang, evidence_source="kgram_loop",
         )
 
-        # Combine all three passes and remove any overlapping blocks so each line
-        # in each submission appears in at most one matched block in the final report.
-        evidence = _merge_evidence(evidence, evidence_loop)
-        evidence = _merge_evidence(evidence, evidence_short)
+        # AST method-pair evidence (Phase 2B)
+        evidence_ast = build_ast_evidence(
+            methods_a=proc_a["method_hashes"],
+            methods_b=proc_b["method_hashes"],
+            function_map_a=proc_a["ast_result"]["functions"],
+            function_map_b=proc_b["ast_result"]["functions"],
+        )
+
+        # Merge all four evidence sources then deduplicate
+        evidence = _merge_evidence(evidence,       evidence_loop)
+        evidence = _merge_evidence(evidence,       evidence_short)
+        evidence = _merge_evidence(evidence,       evidence_ast)
         evidence = _deduplicate_evidence_1to1(evidence)
 
         obfuscation_flags = detect_obfuscation(
@@ -232,7 +332,6 @@ def compare(
             fp_a_norm=fp_a,
             fp_b_norm=fp_b,
         )
-
         # Load the original source files so the report shows the actual student code,
         # not the normalized version that was used internally for fingerprinting.
         original_sources_a = _load_original_sources(dir_a, proc_a["canon"].source_map)
@@ -312,7 +411,10 @@ def compare(
             "submission_b":         submission_b_id,
             "language_detected":    lang,
             "scores":               scores,
-            "obfuscation_flags":    obfuscation_flags,
+            "obfuscation_flags":    [flag_name(f) for f in obfuscation_flags],
+            "obfuscation_flags_raw": obfuscation_flags,
+            "pdg_triggered":        pdg_triggered,
+            "pdg_trigger_reason":   triggered_by,
             "evidence":             evidence,
             "identicalSubmissions": identical,
             "status":               "completed",
@@ -333,7 +435,92 @@ def compare(
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+
+# ---------------------------------------------------------------------------
+# PDG trigger logic (ENGINE_DESIGN.md §6)
+# ---------------------------------------------------------------------------
+
+def _should_trigger_pdg(scores: dict, obfuscation_flags: list) -> bool:
+    """
+    Return True if the PDG layer should run on this pair.
+
+    Three independent trigger conditions — any one is sufficient:
+
+    Condition 1 — Gap between AST and k-gram:
+        AST subtree similarity > 0.60
+        AND k-gram containment < 0.35
+        AND (AST subtree − containment) > 0.30
+        Meaning: structurally very similar but tokens diverged — deliberate
+        obfuscation. This is exactly the case PDG was designed to resolve.
+
+    Condition 2 — Base score in uncertain middle band:
+        Combined base score between 0.40 and 0.65.
+        Below 0.40 = not suspicious. Above 0.65 = already sufficient signal.
+        The middle band is where PDG adds the most value.
+
+    Condition 3 — Specific obfuscation flag combinations:
+        method_decomposition
+        OR code_reordering
+        OR (loop_type_swap AND identifier_renaming together)
+        These are the three flags most predictive of semantic-level obfuscation.
+
+    PDG trigger is never based on k-gram failure alone.
+    """
+    ast_sub    = scores.get("ast_subtree",  0.0)
+    cont       = scores.get("containment",  0.0)
+    base       = scores.get("weighted_final", 0.0)
+
+    # Condition 1
+    if ast_sub > 0.60 and cont < 0.35 and (ast_sub - cont) > 0.30:
+        return True
+
+    # Condition 2
+    if 0.40 <= base <= 0.65:
+        return True
+
+    # Condition 3 — read structured flags
+    trigger_flag_names = {
+        flag_name(f) for f in obfuscation_flags if is_pdg_trigger_flag(f)
+    }
+    all_flag_names = {flag_name(f) for f in obfuscation_flags}
+
+    if "method_decomposition" in trigger_flag_names:
+        return True
+    if "code_reordering" in trigger_flag_names:
+        return True
+    if "loop_type_swap" in trigger_flag_names and "identifier_renaming" in all_flag_names:
+        return True
+
+    return False
+
+
+def _pdg_trigger_reason(scores: dict, obfuscation_flags: list) -> str:
+    """Return a human-readable reason string for why PDG was triggered."""
+    ast_sub = scores.get("ast_subtree", 0.0)
+    cont    = scores.get("containment", 0.0)
+    base    = scores.get("weighted_final", 0.0)
+
+    if ast_sub > 0.60 and cont < 0.35 and (ast_sub - cont) > 0.30:
+        return f"condition_1: ast_subtree={ast_sub:.2f} containment={cont:.2f}"
+    if 0.40 <= base <= 0.65:
+        return f"condition_2: base_score={base:.2f} in [0.40, 0.65]"
+
+    trigger_flag_names = {
+        flag_name(f) for f in obfuscation_flags if is_pdg_trigger_flag(f)
+    }
+    all_flag_names = {flag_name(f) for f in obfuscation_flags}
+
+    if "method_decomposition" in trigger_flag_names:
+        return "condition_3: method_decomposition"
+    if "code_reordering" in trigger_flag_names:
+        return "condition_3: code_reordering"
+    if "loop_type_swap" in trigger_flag_names and "identifier_renaming" in all_flag_names:
+        return "condition_3: loop_type_swap + identifier_renaming"
+    return "unknown"
+
+
 def batch_analyze(
+
     submissions: List[dict],
     assignment_id: Optional[str] = None,
     workdir: Optional[Union[str, Path]] = None,

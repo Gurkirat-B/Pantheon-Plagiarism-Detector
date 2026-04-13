@@ -8,6 +8,15 @@ line level. So we need to convert token positions back to line numbers, then
 merge nearby matches (ones that are only a few lines apart) into a single
 block rather than showing dozens of tiny fragments. Each resulting block gets
 rated high, medium, or low based on how much code it covers.
+
+v2 addition: every evidence block now carries an `evidence_source` field:
+    "kgram"            — k-gram fingerprint match (the existing behaviour)
+    "ast_subtree"      — AST subtree hash match
+    "ast_method_pair"  — AST method-pair best-match
+
+The new build_ast_evidence() function produces evidence blocks from AST
+method-pair matches and returns them in the same format so api.py can
+merge them with k-gram blocks using the existing _merge_evidence logic.
 """
 
 from pathlib import Path
@@ -142,6 +151,7 @@ def build_evidence(
     canonical_text_a: Optional[str] = None,
     canonical_text_b: Optional[str] = None,
     lang: str = "mixed",
+    evidence_source: str = "kgram",
 ) -> List[dict]:
     """
     The main function in this file. It finds all fingerprint hashes that appear
@@ -149,6 +159,12 @@ def build_evidence(
     source files, merges nearby matches into single blocks, filters out blocks
     that are too small to be meaningful, and returns a ranked list of evidence
     blocks for the report.
+
+    Args:
+        evidence_source: Value for the `evidence_source` field on each block.
+                         Defaults to "kgram". Pass "kgram_loop" for the
+                         loop-normalized pass, "kgram_func" for the per-function
+                         pass so api.py can distinguish them in the report.
     """
     shared = set(fp_a.keys()) & set(fp_b.keys())
     if not shared:
@@ -289,10 +305,121 @@ def build_evidence(
             "line_highlights_b": highlights_b,
             "match_strength":    _match_strength(token_count),
             "tokens_matched":    token_count,
+            "evidence_source":   evidence_source,
         })
 
     # Sort so the strongest matches appear first in the report.
     strength_order = {"high": 0, "medium": 1, "low": 2}
     evidence_blocks.sort(key=lambda e: strength_order.get(e["match_strength"], 3))
+
+    return evidence_blocks
+
+
+def build_ast_evidence(
+    methods_a: Dict[str, dict],
+    methods_b: Dict[str, dict],
+    function_map_a: Dict[str, dict],
+    function_map_b: Dict[str, dict],
+    similarity_threshold: float = 0.70,
+) -> List[dict]:
+    """
+    Build evidence blocks from AST method-pair matches.
+
+    For each method pair (one from A, one from B) whose structural similarity
+    exceeds `similarity_threshold`, create an evidence block recording the
+    matched line ranges. These blocks are in the same format as k-gram blocks
+    so they can be fed directly into api.py's _merge_evidence() and
+    _deduplicate_evidence_1to1() without any special handling.
+
+    Args:
+        methods_a:        Per-method SubtreeHashes dict for submission A
+                          (from engine.ast.method_match.per_method_hashes).
+        methods_b:        Same for submission B.
+        function_map_a:   Function boundary map for A from parse_submission
+                          (maps func_name → {start_line, end_line, ...}).
+        function_map_b:   Same for B.
+        similarity_threshold: Minimum similarity to include a pair as evidence.
+                              0.70 is conservative (avoids noise from short helpers).
+
+    Returns:
+        List of evidence block dicts with evidence_source="ast_method_pair".
+        Blocks do not contain code snippets (those are filled in by api.py
+        using the same _build_full_source logic as k-gram blocks).
+    """
+    from engine.ast.method_match import method_pair_similarity
+
+    evidence_blocks = []
+    claimed_a: set = set()
+    claimed_b: set = set()
+
+    # Build match pairs sorted by similarity descending so the strongest
+    # matches are processed first and claim their line ranges.
+    pairs = []
+    for name_a, ha in methods_a.items():
+        info_a = function_map_a.get(name_a)
+        if info_a is None:
+            # Try stripping the file prefix ("file.py::func" -> "func")
+            short_a = name_a.split("::")[-1] if "::" in name_a else name_a
+            info_a = next(
+                (v for k, v in function_map_a.items() if k.split("::")[-1] == short_a),
+                None
+            )
+        if info_a is None:
+            continue
+
+        for name_b, hb in methods_b.items():
+            info_b = function_map_b.get(name_b)
+            if info_b is None:
+                short_b = name_b.split("::")[-1] if "::" in name_b else name_b
+                info_b = next(
+                    (v for k, v in function_map_b.items() if k.split("::")[-1] == short_b),
+                    None
+                )
+            if info_b is None:
+                continue
+
+            sim = method_pair_similarity(ha, hb)
+            if sim >= similarity_threshold:
+                pairs.append((sim, name_a, name_b, info_a, info_b))
+
+    pairs.sort(key=lambda x: x[0], reverse=True)
+
+    for sim, name_a, name_b, info_a, info_b in pairs:
+        a1 = info_a["start_line"]
+        a2 = info_a["end_line"]
+        b1 = info_b["start_line"]
+        b2 = info_b["end_line"]
+
+        # Skip if lines already claimed by a stronger match
+        a_lines = set(range(a1, a2 + 1))
+        b_lines = set(range(b1, b2 + 1))
+        if a_lines & claimed_a or b_lines & claimed_b:
+            continue
+
+        # Minimum size guard: must span at least 3 lines on each side
+        if (a2 - a1) < 3 or (b2 - b1) < 3:
+            continue
+
+        claimed_a |= a_lines
+        claimed_b |= b_lines
+
+        token_count = max(info_a.get("token_count", 10), info_b.get("token_count", 10))
+
+        evidence_blocks.append({
+            "file_a":            "",   # filled by api.py — we don't know filenames here
+            "lines_a":           [a1, a2],
+            "code_a":            "",   # filled by api.py
+            "line_highlights_a": [],
+            "file_b":            "",
+            "lines_b":           [b1, b2],
+            "code_b":            "",
+            "line_highlights_b": [],
+            "match_strength":    _match_strength(token_count),
+            "tokens_matched":    token_count,
+            "evidence_source":   "ast_method_pair",
+            "ast_similarity":    round(sim, 4),
+            "method_a":          name_a,
+            "method_b":          name_b,
+        })
 
     return evidence_blocks

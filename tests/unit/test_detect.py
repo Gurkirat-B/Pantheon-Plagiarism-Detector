@@ -10,7 +10,7 @@ backend_path = Path(__file__).parent.parent.parent / "Backend" / "Pantheon_API"
 sys.path.insert(0, str(backend_path))
 
 from engine.tokenize.lex import Token
-from engine.obfuscation.detect import detect_obfuscation
+from engine.obfuscation.detect import detect_obfuscation, is_pdg_trigger_flag, flag_name
 
 
 class TestObfuscationDetection:
@@ -24,7 +24,9 @@ class TestObfuscationDetection:
             {0x1234: [0, 5]}, {0x1234: [0, 5]},  # fingerprints
         )
         assert isinstance(result, list)
-        assert all(isinstance(flag, str) for flag in result)
+        # Flags are now str OR dict — both are valid
+        for flag in result:
+            assert isinstance(flag, (str, dict))
 
     def test_no_obfuscation_identical_code(self, simple_tokens):
         """Identical code should show no obfuscation."""
@@ -71,7 +73,9 @@ class TestObfuscationDetection:
             {0x1234: [0]}, {0x1234: [0]},
         )
         for flag in result:
-            assert flag in valid_flags
+            # Both str flags and structured dict flags are valid
+            fname = flag_name(flag)
+            assert fname in valid_flags, f"Unexpected flag: {fname}"
 
     def test_empty_tokens(self):
         """Should handle empty token lists."""
@@ -99,3 +103,33 @@ class TestObfuscationDetection:
         )
         # Might detect obfuscation
         assert isinstance(result, list)
+
+
+class TestStructuredFlags:
+    """Tests for the v2 structured flag API."""
+
+    def test_flag_name_str(self):
+        assert flag_name("identifier_renaming") == "identifier_renaming"
+
+    def test_flag_name_dict(self):
+        flag = {"flag": "loop_type_swap", "pdg_trigger": True}
+        assert flag_name(flag) == "loop_type_swap"
+
+    def test_is_pdg_trigger_str_returns_false(self):
+        assert is_pdg_trigger_flag("identifier_renaming") is False
+
+    def test_is_pdg_trigger_dict_returns_true(self):
+        flag = {"flag": "method_decomposition", "pdg_trigger": True}
+        assert is_pdg_trigger_flag(flag) is True
+
+    def test_is_pdg_trigger_dict_false_value(self):
+        flag = {"flag": "something", "pdg_trigger": False}
+        assert is_pdg_trigger_flag(flag) is False
+
+    def test_three_pdg_trigger_flag_names(self):
+        """Only the three designed triggers should be PDG-triggering."""
+        pdg_flags = {"loop_type_swap", "code_reordering", "method_decomposition"}
+        for name in pdg_flags:
+            flag = {"flag": name, "pdg_trigger": True}
+            assert is_pdg_trigger_flag(flag) is True
+            assert flag_name(flag) in pdg_flags
