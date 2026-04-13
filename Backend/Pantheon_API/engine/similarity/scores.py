@@ -1,20 +1,28 @@
 """
-engine/similarity/scores.py
+This file computes how similar two submissions are to each other. Rather than
+relying on a single number, we compute four different similarity measures that
+each capture a slightly different aspect of similarity, then combine them into
+one weighted final score.
 
-Similarity metrics used to compare two sets of fingerprints.
+Jaccard similarity is the fraction of fingerprints shared between two sets.
+It works well when submissions are roughly the same length, but underestimates
+similarity when one submission is much longer than the other.
 
-Jaccard is the standard set overlap measure. Containment is the most
-important fingerprint metric for catching partial plagiarism — it asks
-how much of the smaller submission appears in the larger one.
+Containment similarity fixes that problem: instead of dividing by the union of
+both sets, it divides by the size of the smaller set. This means a small block
+of copied code still scores high even when it appears inside a much larger submission.
 
-cosine_similarity_tokens computes cosine similarity on raw token
-frequency vectors — catches semantic similarity even when fingerprints
-diverge (e.g. after heavy refactoring).
+Cosine similarity on token frequencies catches cases where the fingerprints
+diverge slightly (e.g. due to different variable names) but the overall
+vocabulary of tokens is still very similar.
 
-structural_cosine computes cosine on structural keyword frequency
-vectors — catches programs with the same control-flow shape.
+Structural cosine looks only at control-flow keywords like if, for, while,
+return, and try. Two programs that share the same algorithmic structure will
+have similar counts of these keywords even if everything else is different.
 
-weighted_score() combines all four into a single final score.
+The weighted final score is: jaccard×0.20 + containment×0.35 + cosine×0.30 + structural×0.15.
+Containment gets the highest weight because partial plagiarism (one student
+copying a function from another) is the most common pattern we need to catch.
 """
 
 import math
@@ -23,13 +31,7 @@ from typing import Dict, List, Optional
 
 
 def jaccard(fp_a: Dict[int, List[int]], fp_b: Dict[int, List[int]]) -> float:
-    """
-    |A ∩ B| / |A ∪ B|
-
-    Standard set similarity. Good general measure but understimates similarity
-    when one submission is much longer than the other (e.g. student added
-    a bunch of their own code on top of copied code).
-    """
+    """|A ∩ B| / |A ∪ B| — underestimates similarity when one submission is much longer."""
     a = set(fp_a.keys())
     b = set(fp_b.keys())
     if not a and not b:
@@ -40,15 +42,8 @@ def jaccard(fp_a: Dict[int, List[int]], fp_b: Dict[int, List[int]]) -> float:
 
 
 def containment(fp_a: Dict[int, List[int]], fp_b: Dict[int, List[int]]) -> float:
-    """
-    |A ∩ B| / min(|A|, |B|)
-
-    This is the key metric for catching partial plagiarism.
-    If a student copies 80% of someone else's short assignment into their
-    longer submission, Jaccard might be 0.4 but containment is ~0.8.
-    We use the smaller set as denominator because we want to know:
-    "how much of the smaller submission appears in the larger one?"
-    """
+    """|A ∩ B| / min(|A|, |B|) — the key metric for catching partial plagiarism,
+    where a student copies one function from another's much larger submission."""
     a = set(fp_a.keys())
     b = set(fp_b.keys())
     if not a and not b:
@@ -60,7 +55,7 @@ def containment(fp_a: Dict[int, List[int]], fp_b: Dict[int, List[int]]) -> float
 
 
 def _cosine(vec_a: Dict, vec_b: Dict) -> float:
-    """Cosine similarity between two frequency dicts. Pure Python."""
+    """Cosine similarity between two frequency dictionaries."""
     if not vec_a or not vec_b:
         return 0.0
     dot = sum(vec_a[k] * vec_b[k] for k in vec_a if k in vec_b)
@@ -74,7 +69,7 @@ def _cosine(vec_a: Dict, vec_b: Dict) -> float:
 
 
 def _to_str_list(tokens) -> List[str]:
-    """Accept either List[str] or List[Token] (with .text attr)."""
+    """Accept either a list of strings or a list of Token objects (with a .text attribute)."""
     if not tokens:
         return []
     if hasattr(tokens[0], "text"):
@@ -84,20 +79,11 @@ def _to_str_list(tokens) -> List[str]:
 
 def cosine_similarity_tokens(tok_a, tok_b) -> float:
     """
-    Cosine similarity on raw token frequency vectors (bag-of-words).
-
-    Uses sublinear (log-normalised) TF: weight(t) = 1 + log(tf) when tf > 0.
-    Sublinear TF prevents a single repeated token (e.g. a variable used 50×)
-    from dominating the vector and masking other differences.
-
-    Plain TF-IDF doesn't apply here because we have exactly 2 documents —
-    shared terms get IDF=0 and unique terms get full weight, which is
-    backwards for plagiarism detection. Bag-of-words cosine is the right
-    metric: two copies with identical token distributions score ~1.0.
-
-    Catches semantic similarity even when fingerprints diverge — e.g. a
-    student who rewrites every function name but keeps the same token
-    distribution will still score high here.
+    Compute cosine similarity on token frequency vectors. We use a sublinear
+    term frequency formula (1 + log(count)) so that a token appearing 100 times
+    doesn't completely dominate the score over one that appears 10 times.
+    This catches semantic similarity even when fingerprints diverge due to
+    renaming or other minor structural changes.
     """
     tok_a = _to_str_list(tok_a)
     tok_b = _to_str_list(tok_b)
@@ -112,8 +98,10 @@ def cosine_similarity_tokens(tok_a, tok_b) -> float:
     return _cosine(vec_a, vec_b)
 
 
-# Structural keywords: control-flow constructs that define program shape.
-# Language-agnostic at the token level since the lexer normalises keywords.
+# The keywords that define the structure of a program — the branching, looping,
+# and flow-control constructs that determine what an algorithm actually does.
+# Two programs with the same algorithmic logic will have similar counts of
+# these keywords regardless of what the variables or function names are called.
 _STRUCTURAL_KEYWORDS = {
     "LOOP",  # for/while/do/loop — all normalized to LOOP in tok_norm
     "if", "else", "elif", "switch", "case",
@@ -123,14 +111,9 @@ _STRUCTURAL_KEYWORDS = {
 
 
 def structural_cosine(tok_a, tok_b) -> float:
-    """
-    Cosine similarity on structural keyword frequency vectors.
-
-    Ignores variable names, literals, and identifiers entirely — only
-    counts occurrences of control-flow and structure keywords. Two programs
-    with the same loop/branch/function shape will score high even if every
-    identifier is renamed.
-    """
+    """Cosine similarity computed only on control-flow keyword counts.
+    Two programs with the same algorithmic shape will score high here even
+    if their variable names, literal values, and function names are all different."""
     tok_a = _to_str_list(tok_a)
     tok_b = _to_str_list(tok_b)
     if not tok_a or not tok_b:
@@ -148,18 +131,9 @@ def weighted_score(
     tok_b: Optional[List[str]] = None,
 ) -> dict:
     """
-    Computes all scores and a weighted final.
-
-    Weights (sum to 1.0):
-      - Jaccard     0.20  - overall fingerprint overlap
-      - Containment 0.35  - catches partial copying (most important)
-      - Cosine      0.30  - token-level semantic similarity
-      - Structural  0.15  - control-flow shape similarity
-
-    When tok_a/tok_b are not supplied, cosine and structural fall back to
-    0.0 and their weight is redistributed to the fingerprint metrics.
-
-    Returns a dict so the caller can store all scores separately in the DB.
+    Compute all four similarity metrics and combine them into one weighted score.
+    If token lists are not provided, the cosine and structural components fall back
+    to zero and the weights for the remaining two metrics are adjusted proportionally.
     """
     j = jaccard(fp_a, fp_b)
     c = containment(fp_a, fp_b)
@@ -171,7 +145,6 @@ def weighted_score(
     else:
         cos = None
         struct = None
-        # Fallback: jaccard + containment only, containment weighted higher
         final = round(0.36 * j + 0.64 * c, 4)
 
     result = {

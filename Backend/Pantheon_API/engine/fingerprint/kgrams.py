@@ -1,45 +1,53 @@
 """
-engine/fingerprint/kgrams.py
+This file is the core of how we compare two submissions. The idea is simple:
+take a sequence of tokens (words from the source code), slide a window of
+k tokens across it, and compute a hash for each window. If two submissions
+share many of these hashes, they share many k-token sequences — which means
+chunks of their code are identical.
 
-K-gram fingerprinting using the Winnowing algorithm.
+There are two functions here for two different purposes. build_fingerprints
+computes every single k-gram hash and is used when building evidence (we need
+to know every location where a match occurs so we can show it to the instructor).
+winnow is more selective — it uses the Winnowing algorithm to keep only the
+minimum hash within each sliding window, which produces a much smaller set of
+fingerprints that is efficient for computing similarity scores.
 
-The idea: slide a window over all consecutive k-token sequences (k-grams),
-hash each one, then keep only the minimum hash from each window position.
-This gives a compact but representative set of fingerprints.
-
-The key guarantee: if two submissions share any common token sequence of
-length >= k + window - 1, at least one matching fingerprint is guaranteed
-to be selected from both. With k=10 and window=5 (the engine's default),
-that means any shared run of 14+ tokens will definitely be caught —
-roughly 4-5 lines of identical logic.
-
-build_fingerprints() keeps every k-gram (used for method-level chunk
-comparison). winnow() applies the selection window (used for global
-submission-level comparison).
+The mathematical guarantee of Winnowing is that any shared token sequence of
+length k + window - 1 or more will produce at least one matching fingerprint
+in both submissions, so nothing significant gets missed.
 """
 
 from typing import Dict, List, Tuple
 from engine.tokenize.lex import Token
 
-# Rolling hash parameters
+# Parameters for the polynomial rolling hash. We use a Mersenne prime as the
+# modulus because arithmetic modulo Mersenne primes is fast and the resulting
+# hashes distribute well, which minimizes accidental collisions.
 _BASE = 31
-_MOD  = (1 << 61) - 1   # Mersenne prime
+_MOD  = (1 << 61) - 1   # Mersenne prime: 2^61 - 1
 
 
 def _poly_hash(tokens: List[str]) -> int:
-    """Polynomial rolling hash of a token sequence."""
+    """
+    Compute a hash for a list of tokens by treating each character as a digit
+    in a large base-31 number. A separator byte (0x7f) is inserted between
+    tokens so that ["ab", "c"] and ["a", "bc"] produce different hashes.
+    """
     h = 0
     for t in tokens:
         for ch in t:
             h = (h * _BASE + ord(ch)) % _MOD
-        h = (h * _BASE + 0x7f) % _MOD  # separator
+        h = (h * _BASE + 0x7f) % _MOD  # separator between tokens
     return h
 
 
 def build_fingerprints(tokens: List[Token], k: int = 8) -> Dict[int, List[int]]:
     """
-    Build ALL k-gram fingerprints from the token list.
-    Returns dict mapping hash → list of token indexes where that k-gram starts.
+    Slide a window of k tokens across the token list and hash each window.
+    Returns a dictionary mapping each hash to a list of token positions where
+    that k-gram starts. If the same hash appears at multiple positions, all of
+    them are recorded — this is needed so the evidence builder can find every
+    location where a match occurs in both submissions.
     """
     if k <= 0:
         raise ValueError("k must be >= 1")
@@ -62,14 +70,12 @@ def build_fingerprints(tokens: List[Token], k: int = 8) -> Dict[int, List[int]]:
 
 def winnow(tokens: List[Token], k: int = 8, window: int = 4) -> Dict[int, List[int]]:
     """
-    Winnowing algorithm for fingerprint selection.
-
-    Instead of keeping every k-gram, slides a window and keeps only
-    the minimum hash in each window position. This gives ~25% of
-    all k-grams while guaranteeing detection of shared sequences
-    of length >= k + window - 1 tokens.
-
-    Returns same format as build_fingerprints: hash → [token indexes].
+    A more compact fingerprint set used for computing similarity scores.
+    Instead of keeping every k-gram hash, Winnowing slides a second window
+    (of size `window`) across the list of k-gram hashes and keeps only the
+    minimum hash in each position of that window. This keeps roughly one in
+    every `window` hashes, making the set about 25% the size of the full set
+    while still guaranteeing that long shared sequences are detected.
     """
     if not tokens:
         return {}
@@ -80,14 +86,13 @@ def winnow(tokens: List[Token], k: int = 8, window: int = 4) -> Dict[int, List[i
     if n_tokens < k:
         return {}
 
-    # build all k-gram hashes in order
-    gram_list: List[Tuple[int, int]] = []  # (position, hash)
+    gram_list: List[Tuple[int, int]] = []  # (position, hash) for each k-gram
     for i in range(n_tokens - k + 1):
         h = _poly_hash(texts[i:i + k])
         gram_list.append((i, h))
 
     if len(gram_list) < window:
-        # too short for winnowing — return all k-grams
+        # The file is too short to apply the windowing step, so just return all k-grams.
         return build_fingerprints(tokens, k=k)
 
     selected: Dict[int, List[int]] = {}
@@ -96,7 +101,9 @@ def winnow(tokens: List[Token], k: int = 8, window: int = 4) -> Dict[int, List[i
     for w_start in range(len(gram_list) - window + 1):
         window_slice = gram_list[w_start: w_start + window]
 
-        # pick the rightmost minimum (rightmost avoids re-selecting)
+        # Pick the rightmost occurrence of the minimum hash in this window.
+        # Using the rightmost (not the leftmost) avoids re-selecting the same
+        # fingerprint when the window slides by one position.
         min_h = min(h for _, h in window_slice)
         min_pos = max(pos for pos, h in window_slice if h == min_h)
 

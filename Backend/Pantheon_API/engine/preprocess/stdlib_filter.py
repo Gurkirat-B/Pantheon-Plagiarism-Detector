@@ -1,7 +1,23 @@
+"""
+This file removes standard boilerplate that every student writes just because
+the language requires it — things like import statements, package declarations,
+and #include lines. Since every submission has these, matching on them would
+produce false positives. We blank out those lines (replace with empty string)
+rather than deleting them so that all the line numbers in the file stay the same.
+
+There are two stages of filtering. The first stage (filter_boilerplate) runs
+during canonicalization and removes things like imports and annotations from
+the text that gets fingerprinted. The second stage (blank_output_boilerplate)
+removes I/O calls and main() declarations — those are kept visible in the
+display view so instructors can see the full code, but excluded from fingerprinting
+because they appear identically in almost every student submission.
+"""
+
 import re
 
-# ─── Java ───────────────────────────────────────────────────────────
 
+# All standard Java package prefixes. Imports from these are automatically
+# removed because every student uses them — they don't indicate copying.
 JAVA_STDLIB_PREFIXES = (
     "java.lang.", "java.util.", "java.io.", "java.nio.", "java.net.",
     "java.math.", "java.text.", "java.time.", "java.awt.", "java.swing.",
@@ -10,17 +26,15 @@ JAVA_STDLIB_PREFIXES = (
     "javafx.", "org.junit.", "org.hamcrest.",
 )
 
-# Boilerplate annotations every student uses
 JAVA_BOILERPLATE_ANNOTATIONS = {
     "@Override", "@SuppressWarnings", "@Deprecated",
     "@FunctionalInterface", "@SafeVarargs",
 }
 
-# NOTE: All patterns below use ^[ \t]* (not ^\s*) at the start and [ \t]*$ (not \s*$)
-# at the end.  \s includes \n, so ^\s* with re.MULTILINE can greedily consume
-# preceding blank lines, causing sub("", ...) to DELETE those lines rather than
-# just blanking the matched line.  Using [ \t]* restricts matching to spaces/tabs
-# on the same line, preserving line count exactly.
+# We use [ \t]* instead of \s* at the start and end of each pattern because \s
+# also matches newline characters. With re.MULTILINE, using \s* would cause the
+# regex to greedily consume the blank line before a match and delete it entirely
+# rather than just replacing the matched line with an empty string.
 _java_import_re  = re.compile(r"^[ \t]*import[ \t]+(?:static[ \t]+)?([\w.]+(?:\.\*)?)\s*;", re.MULTILINE)
 _java_package_re = re.compile(r"^[ \t]*package[ \t]+[\w.]+\s*;", re.MULTILINE)
 _java_annotation_boilerplate_re = re.compile(
@@ -28,19 +42,15 @@ _java_annotation_boilerplate_re = re.compile(
     re.MULTILINE,
 )
 
-# System.out.* and System.err.* output calls — only blank trivially generic ones
-# (empty calls or bare string literals with no variable content).
-# Calls with actual content e.g. System.out.println("Error at " + i) are kept
-# so identical non-trivial print statements are correctly flagged as suspicious.
-# Blanked: System.out.println(); / System.out.println("Hello"); / System.err.print("");
-# Kept:    System.out.println("Error: " + msg); / System.out.println(result);
+# We only blank System.out calls that print a plain string literal or nothing at all.
+# Calls that print variables — like System.out.println("Error at index " + i) —
+# are kept, because if two submissions have the exact same print statement with
+# the same variable names, that is itself evidence of copying.
 _java_sysout_re = re.compile(
     r"^[ \t]*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(\s*(?:\"[^\"]*\"|\'[^\']*\'|)\s*\);[ \t]*$",
     re.MULTILINE,
 )
 
-# public static void main(String[] args) { — identical in every Java program.
-# Strips the declaration line; body tokens are preserved (students may put logic there).
 _java_main_re = re.compile(
     r"^[ \t]*(?:public[ \t]+|private[ \t]+|protected[ \t]+)?(?:static[ \t]+)?void[ \t]+main[ \t]*"
     r"\([ \t]*String[ \t]*(?:\[[ \t]*\]|\[[ \t]*\])[ \t]*\w*[ \t]*\)"
@@ -48,16 +58,11 @@ _java_main_re = re.compile(
     re.MULTILINE,
 )
 
-# Single-line null guard returns — every student writes these in recursive methods.
-# e.g. `if (node == null) return null;`  /  `if (node == null) return 0;`
-# These are structurally mandated by the assignment and identical across all submissions.
 _java_null_guard_re = re.compile(
     r"^[ \t]*if\s*\(\s*\w+\s*==\s*null\s*\)\s*return(?:\s+(?:null|false|true|0|-1|0\.0))?\s*;[ \t]*$",
     re.MULTILINE,
 )
 
-# Constructor this-assignments: `this.field = param;`
-# Uniform in every OOP assignment regardless of field/param names.
 _java_this_assign_re = re.compile(
     r"^[ \t]*this\s*\.\s*\w+\s*=\s*\w+\s*;[ \t]*$",
     re.MULTILINE,
@@ -65,9 +70,8 @@ _java_this_assign_re = re.compile(
 
 
 def filter_java_boilerplate(text: str) -> str:
-    # NOTE: _java_sysout_re and _java_main_re are intentionally NOT applied here.
-    # These lines are kept in the canonical (display) text so they appear in the
-    # HTML report. They are blanked for fingerprinting only via blank_output_boilerplate().
+    # System.out calls and main() are handled separately by blank_output_boilerplate
+    # so they still appear in the display view shown to instructors.
     text = _java_package_re.sub("", text)
     text = _java_annotation_boilerplate_re.sub("", text)
 
@@ -87,16 +91,14 @@ def filter_java_boilerplate(text: str) -> str:
     return text
 
 
-# ─── C / C++ ───────────────────────────────────────────────────────
-
+# Standard C and C++ library headers. #include lines for these are removed
+# because they appear in virtually every C/C++ submission.
 C_STDLIB_HEADERS = {
-    # C standard
     "stdio.h", "stdlib.h", "string.h", "math.h", "ctype.h",
     "time.h", "assert.h", "limits.h", "float.h", "stddef.h",
     "stdint.h", "stdbool.h", "stdarg.h", "errno.h", "signal.h",
     "setjmp.h", "locale.h", "complex.h", "fenv.h", "inttypes.h",
     "iso646.h", "wchar.h", "wctype.h", "tgmath.h",
-    # C++ standard
     "iostream", "fstream", "sstream", "string", "vector",
     "list", "map", "set", "unordered_map", "unordered_set",
     "queue", "stack", "deque", "array", "tuple", "pair",
@@ -111,7 +113,6 @@ C_STDLIB_HEADERS = {
     "iomanip", "ios", "iosfwd", "ostream", "istream", "streambuf",
 }
 
-# C/C++ define macros that are structural noise
 _c_include_re = re.compile(r"^[ \t]*#[ \t]*include[ \t]*[<\"]([\w./]+)[>\"]", re.MULTILINE)
 _c_pragma_re  = re.compile(r"^[ \t]*#[ \t]*pragma[ \t]+once[ \t]*$", re.MULTILINE)
 _c_define_guard_re = re.compile(
@@ -119,10 +120,9 @@ _c_define_guard_re = re.compile(
     re.MULTILINE,
 )
 
-# C stdio: only blank trivially generic calls (empty, bare string literal, no variables).
-# scanf/input calls are always blanked — they are structural boilerplate.
-# printf with content e.g. printf("val: %d", x) is kept so identical output
-# statements across submissions are correctly flagged as suspicious.
+# Same rule as Java: only blank I/O calls with no variable content. If two
+# students have identical printf("Sorted array: %d", result) statements, that
+# is meaningful and should be kept for fingerprinting.
 _c_stdio_call_re = re.compile(
     r"^[ \t]*(?:scanf|fscanf|sscanf|gets|fgets|getchar|getc)\s*\(.*\);[ \t]*$"
     r"|^[ \t]*(?:printf|fprintf|sprintf|snprintf|puts|fputs|perror|putchar|putc)"
@@ -130,10 +130,6 @@ _c_stdio_call_re = re.compile(
     re.MULTILINE,
 )
 
-# C++ stream I/O: always blank cin/input streams (structural boilerplate).
-# For cout/cerr: only blank trivially generic output (bare string literals or endl only).
-# cout with variables e.g. cout << result << endl; is kept so identical output
-# statements are flagged as suspicious.
 _cpp_stream_cin_re = re.compile(
     r"^[ \t]*(?:std\s*::\s*)?(?:cin|clog)\s*>>.*;[ \t]*$",
     re.MULTILINE,
@@ -144,21 +140,16 @@ _cpp_stream_re = re.compile(
     re.MULTILINE,
 )
 
-# using namespace std; — boilerplate in virtually every C++ student program
 _cpp_using_ns_re = re.compile(
     r"^[ \t]*using[ \t]+namespace[ \t]+\w+\s*;[ \t]*$",
     re.MULTILINE,
 )
 
-# int main(...) / void main(...) declaration line
-# Covers: main(), main(void), main(int argc, char* argv[]), etc.
 _c_main_re = re.compile(
     r"^[ \t]*(?:int|void)[ \t]+main[ \t]*\([^{;\n]*\)[ \t]*\{?[ \t]*$",
     re.MULTILINE,
 )
 
-# Single-line NULL guard returns — structurally mandated in every pointer-based C/C++ implementation.
-# e.g. `if (node == NULL) return NULL;`  /  `if (ptr == NULL) return 0;`
 _c_null_guard_re = re.compile(
     r"^[ \t]*if\s*\(\s*\w+\s*==\s*NULL\s*\)\s*return(?:\s+(?:NULL|false|true|0|-1))?\s*;[ \t]*$",
     re.MULTILINE,
@@ -166,9 +157,8 @@ _c_null_guard_re = re.compile(
 
 
 def filter_c_boilerplate(text: str) -> str:
-    # NOTE: stdio calls, stream I/O, and main() are intentionally NOT stripped here.
-    # They are kept in the canonical (display) text and blanked for fingerprinting
-    # only via blank_output_boilerplate().
+    # I/O calls, stream statements, and main() are handled separately by
+    # blank_output_boilerplate so they remain visible in the display view.
     def _should_strip_include(match):
         header = match.group(1).strip()
         bare = header.split("/")[-1]
@@ -181,8 +171,6 @@ def filter_c_boilerplate(text: str) -> str:
     text = _c_define_guard_re.sub("", text)
     return text
 
-
-# ─── Python ─────────────────────────────────────────────────────────
 
 PYTHON_STDLIB_MODULES = {
     "os", "sys", "re", "math", "random", "time", "datetime",
@@ -219,13 +207,9 @@ def filter_python_boilerplate(text: str) -> str:
         return match.group(0)
 
     text = _python_import_re.sub(_should_strip, text)
-
-    # strip if __name__ == "__main__" boilerplate
     text = re.sub(r'^\s*if\s+__name__\s*==\s*["\']__main__["\']\s*:\s*$', "", text, flags=re.MULTILINE)
     return text
 
-
-# ─── JavaScript / TypeScript ────────────────────────────────────────
 
 _js_import_re = re.compile(
     r"^\s*import\s+.*\s+from\s+['\"]([^'\"]+)['\"];?\s*$",
@@ -251,10 +235,8 @@ def filter_js_boilerplate(text: str) -> str:
     return text
 
 
-# ─── Entry Point ────────────────────────────────────────────────────
-
 def filter_boilerplate(text: str, lang: str) -> str:
-    """Entry point. Routes to the correct filter based on language."""
+    """Routes to the language-specific filter based on the detected language."""
     lang = (lang or "mixed").lower()
 
     if lang == "java":
@@ -265,7 +247,6 @@ def filter_boilerplate(text: str, lang: str) -> str:
         return filter_python_boilerplate(text)
     if lang in ("javascript", "typescript"):
         return filter_js_boilerplate(text)
-    # mixed: try all applicable ones
     text = filter_java_boilerplate(text)
     text = filter_c_boilerplate(text)
     text = filter_python_boilerplate(text)
@@ -273,28 +254,12 @@ def filter_boilerplate(text: str, lang: str) -> str:
     return text
 
 
-# ─── Fingerprint-only boilerplate blanker ───────────────────────────
-
 def blank_output_boilerplate(text: str, lang: str) -> str:
     """
-    Replace universal output/IO/main boilerplate lines with empty lines,
-    PRESERVING LINE COUNT so that token.line numbers stay aligned with the
-    original canonical_text used for HTML display.
-
-    Called AFTER canonicalize() on the canonical_text.  The result (fp_text)
-    is used exclusively for tokenisation and fingerprinting — never displayed.
-
-    Why blank instead of delete:
-        re.MULTILINE  ^...$  matches line content but NOT the trailing \\n.
-        So sub("", ...) leaves a bare \\n, turning the line empty rather than
-        removing it.  This keeps every subsequent line at the same line number
-        as in canonical_text, so highlight positions in the HTML stay correct.
-
-    Covers:
-        Java  — System.out.* / System.err.* calls, main() declaration
-        C     — printf / scanf / puts / gets / fprintf family
-        C++   — cout / cin / cerr stream statements, using namespace std;
-        C/C++ — int main(...) / void main(...) declaration
+    Replaces output calls and main() declarations with empty lines so they are
+    excluded from fingerprinting without shifting any line numbers. This is applied
+    to the text used for fingerprinting only — the display version shown to
+    instructors still contains these lines so they can read the full submission.
     """
     lang = (lang or "mixed").lower()
 
@@ -321,5 +286,4 @@ def blank_output_boilerplate(text: str, lang: str) -> str:
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
         text = _c_null_guard_re.sub("", text)
-    # python / javascript / typescript — no structural boilerplate blanking needed
     return text

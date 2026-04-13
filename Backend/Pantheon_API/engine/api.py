@@ -1,28 +1,11 @@
 """
-engine/api.py
+This is the only file the rest of the system needs to interact with. It exposes
+two functions: compare() runs a full side-by-side analysis on two submissions and
+returns similarity scores, matching code blocks, and any detected obfuscation.
+batch_analyze() scores every possible pair within a set of submissions and returns
+them ranked from most to least suspicious.
 
-This is the only file the backend needs to import from.
-Everything else is internal implementation detail.
-
-Usage:
     from engine.api import compare, batch_analyze
-
-    result = compare(
-        submission_a_path="/tmp/student1.zip",
-        submission_b_path="/tmp/student2.zip",
-        submission_a_id="sub_001",
-        submission_b_id="sub_002",
-        assignment_id="asgn_xyz",
-    )
-
-    results = batch_analyze(
-        submissions=[
-            {"id": "sub_001", "path": "/tmp/s1.zip"},
-            {"id": "sub_002", "path": "/tmp/s2.zip"},
-        ],
-        assignment_id="asgn_xyz",
-        threshold=0.4,
-    )
 """
 
 import shutil
@@ -43,21 +26,24 @@ from engine.similarity.scores import weighted_score
 from engine.evidence.evidence import build_evidence
 from engine.obfuscation.detect import detect_obfuscation
 
-# k-gram size and winnowing window.
-# k=10, W=5: guaranteed detection of any shared sequence >= 14 tokens
-# (~4-5 logical lines). Raising k from 8 eliminates generic 8-gram false
-# positives (e.g. any code ending a function call with ", NUM);" matches).
+# k is the chunk size used by the Winnowing fingerprinting algorithm — it controls
+# how many consecutive tokens must match before we call it a shared sequence.
+# k=10 means roughly 4-5 lines of code. We tested k=8 but it flagged too many
+# coincidental patterns (like a function call ending with ", value);") that appear
+# in virtually every student submission. k=5 is used in a separate short-method
+# pass to catch very small helper functions that k=10 would miss entirely.
 _K = 10
 _W = 5
-_K_SHORT = 5   # second pass for short methods (< 10 tokens) — evidence only
+_K_SHORT = 5
 _W_SHORT = 3
 
 
 def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str = "mixed"):
     """
-    Full pipeline for one submission: ingest → canonicalize → tokenize → fingerprint.
-    Returns everything needed for comparison.
-    Called once per submission so batch doesn't reprocess.
+    Runs the full preparation pipeline on one submission: extracts the files from
+    the archive, cleans them up, and converts them into fingerprints ready for
+    comparison. This is done once per submission upfront so the work isn't repeated
+    for every pair in a batch.
     """
     path = Path(path)
     _, detected_lang, source_files = ingest_to_dir(path, work_dir)
@@ -65,44 +51,43 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
 
     canon = canonicalize(source_files, work_dir, lang=lang)
 
-    # fp_text: canonical text with output/IO/main boilerplate lines blanked out
-    # (same line count as canonical_text so token.line numbers stay aligned).
-    # Used exclusively for tokenisation and fingerprinting — never displayed.
+    # Build a second version of the text with I/O calls and main() blanked out.
+    # This version is used for fingerprinting only — the original is kept for the
+    # display view shown to instructors. Blanking (replacing with empty lines) rather
+    # than deleting ensures all line numbers stay exactly where they were.
     fp_text = blank_output_boilerplate(canon.canonical_text, lang)
 
-    # normalized tokens (IDs → "ID", literals → "NUM"/"STR"/"CHR", access modifiers stripped)
+    # Normalized tokens replace variable names with "ID", numbers with "NUM", etc.
+    # Two submissions with the same structure but different variable names will
+    # produce identical normalized token streams, which is exactly what we want
+    # for fingerprinting — we care about structure, not what the variables are called.
     tok_norm = tokenize(fp_text, lang=lang,
                         normalize_ids=True, normalize_literals=True,
                         normalize_access=True)
 
-    # raw tokens (keep actual names) — used for obfuscation detection
+    # Raw tokens keep everything as written, so the obfuscation detector can see
+    # what the student actually named their variables and what values they used.
     tok_raw = tokenize(fp_text, lang=lang,
                        normalize_ids=False, normalize_literals=False,
                        normalize_access=False)
 
-    # Hard cap on token count — prevents adversarial giant files from making
-    # fingerprinting O(n²). 50k tokens ≈ 5000-8000 lines of real code.
-    # Any legitimate student submission is well under this limit.
+    # Cap at 50,000 tokens to protect against maliciously large files. Without a cap,
+    # the fingerprinting step runs in O(n²) time and a large enough file could
+    # consume all available memory and crash the server.
     tok_norm = tok_norm[:50000]
     tok_raw  = tok_raw[:50000]
 
-    # Scale k and W to submission length — short submissions need smaller k
-    # to produce any fingerprints, long ones benefit from higher k to reduce
-    # noise. W stays roughly k//2 so the guaranteed-match length scales too.
+    # Scale the chunk size based on how long the submission is. A very short submission
+    # (like a single small function) might produce zero fingerprints at k=10 because
+    # it simply doesn't have 10-token sequences to match. Scaling k down ensures we
+    # still get fingerprint coverage even for tiny submissions.
     n_tokens = len(tok_norm)
     dyn_k = max(8, min(15, n_tokens // 200))
     dyn_w = max(4, min(8, dyn_k // 2))
 
-    # Winnowed fingerprints — used for scoring only (fast, statistically accurate)
-    fp = winnow(tok_norm, k=dyn_k, window=dyn_w)
-
-    # Full k-grams at k=12 — used for evidence building only (complete coverage,
-    # no Winnowing gaps). Higher k=12 means ~5-6 lines minimum match — precise
-    # blocks with correct high/medium/low ratings and no missing regions.
-    fp_full = build_fingerprints(tok_norm, k=12)
-
-    # Supplementary short pass — catches methods too short for k=12.
-    fp_short = build_fingerprints(tok_norm, k=_K_SHORT)
+    fp       = winnow(tok_norm, k=dyn_k, window=dyn_w)  # compact set used for scoring
+    fp_full  = build_fingerprints(tok_norm, k=12)         # full coverage used for evidence
+    fp_short = build_fingerprints(tok_norm, k=_K_SHORT)   # smaller chunks for short methods
 
     return {
         "lang":     lang,
@@ -127,16 +112,16 @@ def compare(
     template_path: Optional[Union[str, Path]] = None,
 ) -> dict:
     """
-    Compare two submissions (ZIP files or single source files).
+    Runs the full comparison between two submissions and returns everything the
+    backend needs for the report: similarity scores, a list of matching code blocks
+    with exact line numbers, and any obfuscation patterns detected.
 
-    submission_a_id and submission_b_id are opaque DB IDs — engine never
-    knows student names, only these IDs.
+    If template_path is provided, fingerprints from the instructor's starter code
+    are removed from both submissions before scoring. This prevents boilerplate
+    that every student starts with from inflating the similarity score.
 
-    template_path: optional path to instructor template code. If provided,
-    fingerprints from the template are subtracted from both submissions
-    so shared template code doesn't inflate the similarity score.
-
-    Returns a structured dict ready to be inserted into the DB by the backend.
+    submission_a_id and submission_b_id are the database identifiers the backend
+    uses to refer to each submission. The engine never sees student names.
     """
     use_temp = workdir is None
     if use_temp:
@@ -158,16 +143,16 @@ def compare(
         fp_a = proc_a["fp"]
         fp_b = proc_b["fp"]
 
-        # subtract template fingerprints from scoring pass if provided
         if template_path:
             template_fp = _get_template_fingerprints(template_path, workdir / "template")
             fp_a = _subtract_fingerprints(fp_a, template_fp)
 
         scores = weighted_score(fp_a, fp_b, tok_a=proc_a["tok_norm"], tok_b=proc_b["tok_norm"])
 
-        # Scale merge_gap with similarity — high-similarity files have large
-        # Winnowing gaps that would otherwise leave unhighlighted regions between
-        # matched blocks. A larger merge_gap closes those gaps.
+        # When two submissions are very similar, the fingerprinting algorithm leaves
+        # small gaps between matched regions where a single different token broke a
+        # k-gram chain. We merge blocks that are close together to fill those gaps.
+        # The higher the similarity, the larger a gap we're willing to close.
         final = scores["weighted_final"]
         if final >= 0.90:
             merge_gap = 20
@@ -176,9 +161,8 @@ def compare(
         else:
             merge_gap = 3
 
-        # Evidence uses full k-grams (no Winnowing) for complete coverage.
-        # k=12 primary — precise blocks ~5-6 lines minimum.
-        # k=5 supplementary — catches short methods too small for k=12.
+        # Primary evidence pass: chunks of 12 tokens — catches any shared sequence
+        # of roughly 5-6 lines or more.
         evidence = build_evidence(
             proc_a["fp_full"], proc_b["fp_full"],
             tok_a=proc_a["tok_norm"],
@@ -193,6 +177,9 @@ def compare(
             canonical_text_b=proc_b["canon"].canonical_text,
             lang=lang,
         )
+
+        # Short-method pass: smaller chunks of 5 tokens — catches shared code in
+        # very short helper functions that the primary pass would miss entirely.
         evidence_short = build_evidence(
             proc_a["fp_short"], proc_b["fp_short"],
             tok_a=proc_a["tok_norm"],
@@ -207,8 +194,11 @@ def compare(
             canonical_text_b=proc_b["canon"].canonical_text,
             lang=lang,
         )
-        # Loop-normalized evidence pass (Option 5): map for/while/do → LOOP so
-        # loop-swapped methods produce k-gram matches regardless of loop type.
+
+        # Loop-normalized pass: replace for/while/do with a generic LOOP token before
+        # fingerprinting. This catches cases where one student converted every for-loop
+        # to a while-loop — the structure is identical but the primary pass won't
+        # match because the keyword is different.
         tok_loop_a = _normalize_loops(proc_a["tok_norm"])
         tok_loop_b = _normalize_loops(proc_b["tok_norm"])
         fp_loop_a = build_fingerprints(tok_loop_a, k=12)
@@ -227,6 +217,9 @@ def compare(
             canonical_text_b=proc_b["canon"].canonical_text,
             lang=lang,
         )
+
+        # Combine all three passes and remove any overlapping blocks so each line
+        # in each submission appears in at most one matched block in the final report.
         evidence = _merge_evidence(evidence, evidence_loop)
         evidence = _merge_evidence(evidence, evidence_short)
         evidence = _deduplicate_evidence_1to1(evidence)
@@ -240,25 +233,21 @@ def compare(
             fp_b_norm=fp_b,
         )
 
-        # Load original source files for display in the frontend.
+        # Load the original source files so the report shows the actual student code,
+        # not the normalized version that was used internally for fingerprinting.
         original_sources_a = _load_original_sources(dir_a, proc_a["canon"].source_map)
         original_sources_b = _load_original_sources(dir_b, proc_b["canon"].source_map)
 
-        # Strip comments from original sources before building the full code view.
-        # strip_comments preserves line count (blanks comment lines) so evidence
-        # line numbers remain correct for highlighting.
+        # Strip comments and import/header lines from the display version. We replace
+        # those lines with empty strings rather than removing them so that all line
+        # numbers in the evidence blocks still line up with the displayed code.
         stripped_sources_a = {f: strip_comments(c, lang) for f, c in original_sources_a.items()}
         stripped_sources_b = {f: strip_comments(c, lang) for f, c in original_sources_b.items()}
-
-        # Blank out import/package/#include/using lines — these are boilerplate
-        # headers that clutter the full code view without adding meaning.
-        # Lines are replaced with "" (not removed) so line numbers stay valid.
         stripped_sources_a = {f: _blank_header_lines(c) for f, c in stripped_sources_a.items()}
         stripped_sources_b = {f: _blank_header_lines(c) for f, c in stripped_sources_b.items()}
 
-        # Build concatenated full source and per-file line offsets.
-        # Evidence lines_a/b are converted from per-file to concatenated line numbers
-        # so the frontend can highlight sections in a single unified code view.
+        # Join all source files into one continuous text block and record where each
+        # file starts, so per-file line numbers can be converted to global positions.
         full_source_a, file_offsets_a = _build_full_source(stripped_sources_a)
         full_source_b, file_offsets_b = _build_full_source(stripped_sources_b)
 
@@ -274,9 +263,10 @@ def compare(
             a1, a2 = block["lines_a"]
             b1, b2 = block["lines_b"]
 
-            # Option 1 — extend block upward while lines above are identical.
-            # Recovers method signatures and class headers that are copy-pasted
-            # verbatim above a matched block but fall below the 4-line threshold.
+            # Walk upward from the top of the matched block and keep extending it as
+            # long as the lines immediately above are also identical in both submissions.
+            # This recovers function signatures and class headers that were copied verbatim
+            # but sit just above the k-gram matching threshold.
             while a1 > 1 and b1 > 1:
                 la = full_a_lines[a1 - 2].strip()
                 lb = full_b_lines[b1 - 2].strip()
@@ -288,19 +278,18 @@ def compare(
             block["lines_a"] = [a1, a2]
             block["lines_b"] = [b1, b2]
 
-            # Re-derive code snippets directly from the final (trimmed + offset) line
-            # ranges so code_a/b is always consistent with lines_a/b.
             block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
 
-            # Offset-adjust highlights and clamp to final section bounds.
             block["line_highlights_a"] = [l + off_a for l in block.get("line_highlights_a", [])
                                           if a1 <= l + off_a <= a2]
             block["line_highlights_b"] = [l + off_b for l in block.get("line_highlights_b", [])
                                           if b1 <= l + off_b <= b2]
 
-        # For near-identical submissions (>=95%), replace evidence with a single
-        # synthetic block covering the entire file — no Winnowing gaps, full match.
+        # If the submissions are essentially identical (>=95% similarity score), replace
+        # all the individual matched blocks with a single block covering the entire
+        # submission. Showing dozens of small fragments when everything is copied is
+        # less clear than just saying "the whole thing matches."
         identical = final >= 0.95
         if identical:
             total_a = len(full_source_a.splitlines())
@@ -353,20 +342,16 @@ def batch_analyze(
     skip_same_student: bool = True,
 ) -> dict:
     """
-    Run all-vs-all scoring pass for a set of submissions.
+    Scores every possible pair of submissions against each other and returns
+    them ranked from most to least similar. This is intended as a fast screening
+    pass over a whole class — it only computes scores, not detailed evidence.
+    Call compare() separately on any suspicious pair to get the full line-level
+    match report with highlighted code.
 
-    submissions: list of {
-        "id": str,
-        "path": str/Path,
-        "student_id": str (optional) — skip pairs from the same student,
-        "group": str (optional) — skip pairs where both share the same group,
-    }
-    max_workers: parallel processing workers
-    template_path: instructor template — fingerprints subtracted before scoring
-    skip_same_student: if True and submissions have "student_id", skip self-comparisons
-
-    Returns ALL pairs ranked by score descending. No threshold filtering.
-    Evidence is not built here — call compare() on a specific pair for full details.
+    Each submission in the list should be a dict with at least "id" and "path".
+    You can also include "student_id" to skip pairs from the same student
+    (useful for group submissions), or "group" to skip pairs that share the
+    same group label (useful for excluding known reference files).
     """
     if len(submissions) < 2:
         return {
@@ -385,12 +370,10 @@ def batch_analyze(
         workdir = Path(workdir)
         workdir.mkdir(parents=True, exist_ok=True)
 
-    # preprocess template if provided
     template_fp = {}
     if template_path:
         template_fp = _get_template_fingerprints(template_path, workdir / "template")
 
-    # step 1: preprocess all submissions (parallelised)
     processed = {}
     errors = {}
 
@@ -400,7 +383,6 @@ def batch_analyze(
         work   = workdir / f"sub_{sub_id}"
         try:
             result = _process_submission(path, work)
-            # subtract template from both fingerprint passes
             if template_fp:
                 result["fp"]       = _subtract_fingerprints(result["fp"],       template_fp)
                 result["fp_short"] = _subtract_fingerprints(result["fp_short"], template_fp)
@@ -408,6 +390,7 @@ def batch_analyze(
         except Exception as e:
             return sub_id, None, str(e)
 
+    # Process all submissions in parallel so we don't wait for one at a time.
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(_proc, sub): sub for sub in submissions}
         for fut in as_completed(futures):
@@ -417,7 +400,6 @@ def batch_analyze(
             else:
                 errors[sub_id] = err
 
-    # build student_id and group mappings
     student_map = {}
     group_map = {}
     for sub in submissions:
@@ -430,21 +412,18 @@ def batch_analyze(
     n   = len(ids)
     total_pairs = n * (n - 1) // 2
 
-    # step 2: all-vs-all scoring only — no evidence building, no obfuscation detection
     pairs = []
     for i in range(n):
         for j in range(i + 1, n):
             id_a = ids[i]
             id_b = ids[j]
 
-            # skip if same student
             if skip_same_student and student_map:
                 sa = student_map.get(id_a)
                 sb = student_map.get(id_b)
                 if sa and sb and sa == sb:
                     continue
 
-            # skip if same group (e.g. both are professor reference files)
             if group_map:
                 ga = group_map.get(id_a)
                 gb = group_map.get(id_b)
@@ -454,8 +433,9 @@ def batch_analyze(
             pa = processed[id_a]
             pb = processed[id_b]
 
-            # skip cross-language pairs — Java vs C etc. score near zero anyway
-            # but explicit skip keeps results clean and avoids wasted work
+            # Skip pairs in completely different languages — a Java submission compared
+            # to a C++ submission would score near zero regardless, and including these
+            # pairs just adds noise to the results.
             if pa["lang"] != pb["lang"] and "mixed" not in (pa["lang"], pb["lang"]):
                 continue
 
@@ -484,10 +464,11 @@ def batch_analyze(
 
 def _merge_evidence(primary: list, supplementary: list) -> list:
     """
-    Merge two evidence block lists, removing blocks from supplementary that
-    are already covered by a block in primary (overlap on both A and B sides).
-    Keeps all primary blocks. Only adds supplementary blocks that cover
-    genuinely new line regions not already highlighted by primary.
+    Combines two lists of matched blocks into one. Blocks from the supplementary
+    list are only added if they cover regions not already covered by the primary
+    list — both the A-side and B-side regions must not overlap. This prevents
+    the same section of code from being reported multiple times across the
+    three evidence passes.
     """
     if not supplementary:
         return primary
@@ -509,15 +490,13 @@ def _merge_evidence(primary: list, supplementary: list) -> list:
 
 def _deduplicate_evidence_1to1(evidence: list) -> list:
     """
-    Enforce 1-to-1 mapping: each line region in A maps to at most one
-    region in B, and vice versa.
+    Ensures that each line in each submission belongs to at most one matched block
+    in the final report. Without this, the same copied lines could appear in several
+    overlapping blocks from the three different evidence passes.
 
-    Sort by (strength, block size) descending so HIGH + large blocks
-    claim their lines first. Any block that overlaps already-claimed
-    lines on either side is dropped.
-
-    This eliminates the many-to-many noise where a 2-line boilerplate
-    in A matches the same 2-line pattern at every method boundary in B.
+    We process blocks from strongest and largest to weakest. Each block "claims" its
+    lines. If a later block overlaps already-claimed lines, those lines are trimmed
+    away. If not enough meaningful lines remain after trimming, the block is dropped.
     """
     strength_rank = {"high": 2, "medium": 1, "low": 0}
 
@@ -534,19 +513,15 @@ def _deduplicate_evidence_1to1(evidence: list) -> list:
         a1, a2 = block["lines_a"]
         b1, b2 = block["lines_b"]
 
-        # trim A side — skip lines already claimed
         while a1 <= a2 and a1 in claimed_a:
             a1 += 1
         while a2 >= a1 and a2 in claimed_a:
             a2 -= 1
-
-        # trim B side
         while b1 <= b2 and b1 in claimed_b:
             b1 += 1
         while b2 >= b1 and b2 in claimed_b:
             b2 -= 1
 
-        # drop if nothing meaningful left after trimming
         if a2 - a1 < 2 or b2 - b1 < 2:
             continue
 
@@ -565,8 +540,11 @@ def _deduplicate_evidence_1to1(evidence: list) -> list:
 
 
 def _normalize_loops(tokens):
-    """Replace for/while/do keyword tokens with LOOP so loop-swapped code
-    produces k-gram matches regardless of which loop construct was used."""
+    """
+    Returns a copy of the token list where every for, while, and do keyword is
+    replaced with a generic LOOP token. This is used for the loop-normalized
+    evidence pass only — the original token list is not modified.
+    """
     from engine.tokenize.lex import Token
     _LOOP_KW = {"for", "while", "do"}
     return [Token(text="LOOP", line=t.line) if t.text in _LOOP_KW else t
@@ -575,26 +553,25 @@ def _normalize_loops(tokens):
 
 def _blank_header_lines(code: str) -> str:
     """
-    Replace import/package/#include/using namespace/extern lines with empty
-    lines, preserving line count so evidence line numbers stay valid.
-    Handles Java (import/package), C/C++ (#include/#define/#pragma/using),
-    and Python (import/from ... import).
+    Replaces import statements, #include lines, package declarations, and other
+    header boilerplate with empty lines in the display version of the code. We blank
+    rather than delete so that line numbers in all the evidence blocks remain accurate.
     """
     import re
     _HEADER_RE = re.compile(
         r"^\s*("
-        r"import\b"           # Java: import foo.bar.*;  Python: import os
-        r"|package\b"         # Java: package com.example;
-        r"|from\b.+\bimport\b"  # Python: from os import path
-        r"|#\s*include\b"     # C/C++: #include <stdio.h>
-        r"|#\s*define\b"      # C/C++: #define MAX 100
-        r"|#\s*pragma\b"      # C/C++: #pragma once
-        r"|#\s*ifndef\b"      # C/C++: #ifndef GUARD_H
-        r"|#\s*ifdef\b"       # C/C++: #ifdef DEBUG
-        r"|#\s*endif\b"       # C/C++: #endif
-        r"|using\s+namespace\b"  # C++: using namespace std;
-        r"|using\b.+;"        # C++: using std::cout;
-        r"|extern\s+\"C\""    # C/C++: extern "C" {
+        r"import\b"
+        r"|package\b"
+        r"|from\b.+\bimport\b"
+        r"|#\s*include\b"
+        r"|#\s*define\b"
+        r"|#\s*pragma\b"
+        r"|#\s*ifndef\b"
+        r"|#\s*ifdef\b"
+        r"|#\s*endif\b"
+        r"|using\s+namespace\b"
+        r"|using\b.+;"
+        r"|extern\s+\"C\""
         r")"
     )
     lines = code.splitlines()
@@ -604,13 +581,11 @@ def _blank_header_lines(code: str) -> str:
 
 def _build_full_source(original_sources: dict) -> tuple:
     """
-    Concatenate original source files in sorted order (same sort as canonicalize.py)
-    into a single string for the full code view.
-
-    Returns (full_source_text, file_offsets) where file_offsets is
-    {filename: line_offset} — the number of lines preceding that file in the
-    concatenated view. Add this offset to per-file line numbers to get the
-    correct line number in the concatenated display.
+    Joins all source files from a submission into one continuous block of text,
+    sorted alphabetically by filename (the same order used during canonicalization
+    so line numbers stay consistent). Returns the combined text and a dictionary
+    mapping each filename to the line offset where it starts in the combined view,
+    so per-file line numbers can be converted to global positions in the report.
     """
     ordered = sorted(original_sources.items(), key=lambda x: x[0].lower())
     parts = []
@@ -627,7 +602,12 @@ def _build_full_source(original_sources: dict) -> tuple:
 
 
 def _get_template_fingerprints(template_path: Union[str, Path], work_dir: Path) -> dict:
-    """Process the instructor template and return its fingerprints."""
+    """
+    Processes the instructor's template file through the same pipeline as a
+    student submission and returns its fingerprints. These are then subtracted
+    from both submissions so that starter code everyone copies from the handout
+    doesn't contribute to the similarity score.
+    """
     try:
         proc = _process_submission(template_path, work_dir)
         return proc["fp"]
@@ -637,12 +617,10 @@ def _get_template_fingerprints(template_path: Union[str, Path], work_dir: Path) 
 
 def _load_original_sources(work_dir: Path, source_map) -> dict:
     """
-    Load the original (pre-canonicalization) content of every source file
-    referenced in the source map.  Returns {relative_filename: full_text}.
-
-    Called while work_dir still exists (inside the compare() try block), so
-    file access is guaranteed.  Returns plain strings — safe after temp cleanup.
-    Any file that can't be read is silently skipped (graceful degradation).
+    Reads the original (unmodified) source files from the working directory and
+    returns their contents as strings keyed by relative filename. These are the
+    files the instructor sees in the report — not the normalized version used
+    internally. Any file that can't be read is silently skipped.
     """
     result = {}
     for entry in source_map:
@@ -665,7 +643,11 @@ def _load_original_sources(work_dir: Path, source_map) -> dict:
 
 
 def _subtract_fingerprints(fp: dict, template_fp: dict) -> dict:
-    """Remove template fingerprints from a submission's fingerprints."""
+    """
+    Removes any fingerprint hashes that appear in the template from a submission's
+    fingerprint set. What remains are the fingerprints that belong to the student's
+    own code rather than code they received in the handout.
+    """
     if not template_fp:
         return fp
     return {h: positions for h, positions in fp.items() if h not in template_fp}

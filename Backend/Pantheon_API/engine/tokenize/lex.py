@@ -1,16 +1,13 @@
 """
-Lexer / tokenizer for source code.
+This file reads source code as plain text and breaks it into a list of tokens —
+the individual meaningful pieces like keywords, variable names, operators, and
+literals. Each token also records which line of the original file it came from,
+so we can trace matches back to specific lines later.
 
-Produces a stream of Token objects from canonical text.
-Two modes:
-  - normalize_ids=True:  all non-keyword identifiers → "ID"
-  - normalize_ids=False: keep actual identifier names (for obfuscation detection)
-
-Similarly for literals:
-  - normalize_literals=True:  strings → "STR", numbers → "NUM", chars → "CHR"
-  - normalize_literals=False: keep actual literal values
-
-The token's .line field tracks position in canonical text for evidence mapping.
+When normalizing (the default mode), variable names become "ID", numbers become
+"NUM", strings become "STR", and loop keywords (for/while/do) all become "LOOP".
+This lets us compare the structure of two programs without caring about what
+the variables are called or what values are used.
 """
 
 import re
@@ -23,7 +20,8 @@ class Token:
     line: int
 
 
-# ─── Keyword Sets ───────────────────────────────────────────────────
+# Reserved keywords for each supported language. These are kept as-is during
+# normalization because they define the structure of the code, not the content.
 
 JAVA_KW: Set[str] = {
     "abstract", "assert", "boolean", "break", "byte", "case", "catch",
@@ -95,8 +93,8 @@ RUST_KW: Set[str] = {
     "super", "trait", "true", "type", "unsafe", "use", "where", "while",
 }
 
-# ─── Operators ──────────────────────────────────────────────────────
-
+# Operators sorted longest-first so we always match the longest valid operator
+# at any given position (e.g. <<= before << before <).
 _OPS = sorted({
     "==", "!=", ">=", "<=", "&&", "||", "++", "--", "+=", "-=",
     "*=", "/=", "%=", "->", "::", "<<", ">>", "<<=", ">>=",
@@ -106,8 +104,7 @@ _OPS = sorted({
     "(", ")", "{", "}", "[", "]", "@",
 }, key=len, reverse=True)
 
-# ─── Regex Patterns ─────────────────────────────────────────────────
-
+# Regular expressions for recognizing each kind of token in the source text.
 _re_whitespace = re.compile(r"[ \t\r]+")
 _re_identifier = re.compile(r"[A-Za-z_\$][A-Za-z0-9_\$]*")
 _re_hex        = re.compile(r"0[xX][0-9a-fA-F]+[lLuU]*")
@@ -118,9 +115,9 @@ _re_int        = re.compile(r"\d+[lLuU]*")
 _re_string     = re.compile(r'"([^"\\]|\\.)*"')
 _re_char       = re.compile(r"'([^'\\]|\\.)*'")
 _re_textblock  = re.compile(r'""".*?"""', re.DOTALL)
-_re_raw_string = re.compile(r'R"([^(]*)\(.*?\)\1"', re.DOTALL)  # C++ raw strings
-_re_fstring    = re.compile(r'f"([^"\\]|\\.)*"')  # Python f-strings (simplified)
-_re_backtick   = re.compile(r'`([^`\\]|\\.)*`')  # JS template literals (simplified)
+_re_raw_string = re.compile(r'R"([^(]*)\(.*?\)\1"', re.DOTALL)
+_re_fstring    = re.compile(r'f"([^"\\]|\\.)*"')
+_re_backtick   = re.compile(r'`([^`\\]|\\.)*`')
 
 
 def _kw_set(lang: str) -> Set[str]:
@@ -139,46 +136,42 @@ def _kw_set(lang: str) -> Set[str]:
         return GO_KW
     if lang == "rust":
         return RUST_KW
-    # mixed: union of all
     return JAVA_KW | CPP_KW | PYTHON_KW | JS_KW | GO_KW | RUST_KW
 
 
-# ─── Semantic Token Normalization ───────────────────────────────────
+# In normalized mode, all loop keywords collapse to the same token "LOOP" so that
+# a for-loop and a while-loop doing the same thing produce matching fingerprints.
+# The raw token stream is left unchanged so the obfuscation detector can still
+# see which loop construct was actually written.
+_LOOP_KEYWORDS = {"for", "while", "do", "loop"}  # "loop" is a keyword in Rust
 
-# Loop keywords: all map to "LOOP" in normalized mode so for↔while↔do swaps
-# still produce matching k-grams. Only affects tok_norm — tok_raw is unchanged
-# so detect.py can still identify which loop construct was actually used.
-_LOOP_KEYWORDS = {"for", "while", "do", "loop"}  # "loop" for Rust
-
-# Access modifiers — noise for algorithm comparison
+# Access modifiers like public/private/static don't affect what an algorithm does,
+# only who can call it. We drop them in normalized mode to avoid false negatives
+# when one student wrote `public void sort()` and another wrote `void sort()`.
 _ACCESS_KEYWORDS = {
     "public", "private", "protected", "internal",
     "static", "final", "const", "constexpr",
     "abstract", "virtual", "override",
     "synchronized", "volatile", "transient",
     "inline", "extern", "register",
-    "pub", "mut",  # Rust
+    "pub", "mut",
 }
 
-# Primitive and common types — normalize to "TYPE" so int→long, float→double
-# etc. don't break k-gram matches. Only affects tok_norm.
+# Students often swap primitive types to make copied code look different — using
+# long instead of int, or double instead of float. In normalized mode we collapse
+# all of these to "TYPE" so the swap doesn't break fingerprint matching.
 _TYPE_KEYWORDS = {
-    # Java / C / C++ primitives
     "int", "long", "short", "byte", "float", "double", "char", "boolean",
     "void", "unsigned", "signed",
-    # Java collections / common types students swap
     "ArrayList", "LinkedList", "HashMap", "HashSet", "TreeMap", "TreeSet",
     "LinkedHashMap", "LinkedHashSet", "ArrayDeque", "PriorityQueue",
     "List", "Map", "Set", "Queue", "Deque", "Collection", "Iterator",
-    # Java exception types
     "Exception", "RuntimeException", "IllegalArgumentException",
     "NullPointerException", "IndexOutOfBoundsException",
     "IllegalStateException", "UnsupportedOperationException",
     "IOException", "ArithmeticException",
-    # C++ types students swap
     "vector", "list", "map", "set", "unordered_map", "unordered_set",
     "deque", "queue", "stack", "pair", "string", "wstring",
-    # Python common types
     "int", "float", "str", "bool", "list", "dict", "set", "tuple",
 }
 
@@ -189,12 +182,13 @@ def tokenize(text: str,
              normalize_literals: bool = True,
              normalize_access: bool = True) -> List[Token]:
     """
-    Converts source text into a token stream.
+    Reads through source code character by character and produces a list of tokens.
+    Each token records its text and the line number it came from in the source.
 
-    normalize_ids:     all non-keyword identifiers → "ID"
-    normalize_literals: strings/numbers/chars → "STR"/"NUM"/"CHR"
-    normalize_access:  strip access modifiers (public/private/static/final etc.)
-                       since they don't affect algorithm logic
+    When normalize_ids is True, every variable and function name becomes "ID".
+    When normalize_literals is True, every number becomes "NUM" and every string
+    becomes "STR". This makes structurally identical code produce identical token
+    sequences even when the variable names and values differ.
     """
     kws = _kw_set(lang)
     tokens: List[Token] = []
@@ -208,32 +202,27 @@ def tokenize(text: str,
     while i < n:
         ch = text[i]
 
-        # newline
         if ch == "\n":
             line += 1
             i += 1
             continue
 
-        # whitespace
         if ch in " \t\r":
             m = _re_whitespace.match(text, i)
             i = m.end()
             continue
 
-        # skip file separator headers from canonicalize
-        if text.startswith("# --- ", i):
+        if text.startswith("# --- ", i):  # file separator inserted by canonicalize, skip it
             while i < n and text[i] != "\n":
                 i += 1
             continue
 
-        # Python comments that survived (shouldn't happen, but safety net)
-        if ch == "#" and lang in ("python", "ruby"):
+        if ch == "#" and lang in ("python", "ruby"):  # hash comments that survived stripping
             while i < n and text[i] != "\n":
                 i += 1
             continue
 
-        # C++ raw strings: R"delim(...)delim"
-        m = _re_raw_string.match(text, i)
+        m = _re_raw_string.match(text, i)  # C++ raw strings: R"delim(content)delim"
         if m:
             emit("STR" if normalize_literals else m.group(0))
             for c in m.group(0):
@@ -242,8 +231,7 @@ def tokenize(text: str,
             i = m.end()
             continue
 
-        # Java text blocks
-        m = _re_textblock.match(text, i)
+        m = _re_textblock.match(text, i)  # Java text blocks: """..."""
         if m:
             emit("STR" if normalize_literals else m.group(0))
             for c in m.group(0):
@@ -252,8 +240,7 @@ def tokenize(text: str,
             i = m.end()
             continue
 
-        # JS template literals
-        m = _re_backtick.match(text, i)
+        m = _re_backtick.match(text, i)  # JavaScript template literals: `...`
         if m:
             emit("STR" if normalize_literals else m.group(0))
             for c in m.group(0):
@@ -262,59 +249,49 @@ def tokenize(text: str,
             i = m.end()
             continue
 
-        # string literal
         m = _re_string.match(text, i)
         if m:
             emit("STR" if normalize_literals else m.group(0))
             i = m.end()
             continue
 
-        # char literal
         m = _re_char.match(text, i)
         if m:
             emit("CHR" if normalize_literals else m.group(0))
             i = m.end()
             continue
 
-        # hex number
         m = _re_hex.match(text, i)
         if m:
             emit("NUM" if normalize_literals else m.group(0))
             i = m.end()
             continue
 
-        # binary number
         m = _re_binary.match(text, i)
         if m:
             emit("NUM" if normalize_literals else m.group(0))
             i = m.end()
             continue
 
-        # float (check before int)
-        m = _re_float.match(text, i)
+        m = _re_float.match(text, i)  # must be checked before int to avoid consuming "3" from "3.14"
         if m:
             emit("NUM" if normalize_literals else m.group(0))
             i = m.end()
             continue
 
-        # integer
         m = _re_int.match(text, i)
         if m:
             emit("NUM" if normalize_literals else m.group(0))
             i = m.end()
             continue
 
-        # identifier or keyword
         m = _re_identifier.match(text, i)
         if m:
             word = m.group(0)
             if word in kws:
-                # normalize access modifiers to nothing — they're noise
                 if normalize_access and word in _ACCESS_KEYWORDS:
                     i = m.end()
                     continue
-                # normalize all loop constructs to LOOP so for↔while↔do swaps
-                # still produce matching k-grams (only in normalized mode)
                 if normalize_ids and word in _LOOP_KEYWORDS:
                     emit("LOOP")
                 else:
@@ -327,8 +304,7 @@ def tokenize(text: str,
             i = m.end()
             continue
 
-        # operators (greedy, longest match first)
-        matched = False
+        matched = False  # try each operator pattern, longest first
         for op in _OPS:
             if text.startswith(op, i):
                 emit(op)
@@ -338,7 +314,6 @@ def tokenize(text: str,
         if matched:
             continue
 
-        # skip anything else
-        i += 1
+        i += 1  # skip any character we don't recognize
 
     return tokens

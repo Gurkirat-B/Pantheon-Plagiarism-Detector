@@ -1,12 +1,13 @@
 """
-engine/evidence/evidence.py
+This file takes the raw fingerprint comparison results and turns them into
+something a person can actually read — a list of matching code blocks, each
+showing the exact lines from both submissions that appear to be copied.
 
-Builds the list of matching code blocks that the instructor sees in the report.
-
-For every fingerprint hash shared between two submissions, we find the token
-positions in each, convert those to original file line numbers via the source
-map, and merge nearby matches into contiguous blocks. Each block gets a
-match strength rating (high/medium/low) based on how many tokens it spans.
+The core challenge here is that fingerprints work at the token level, not the
+line level. So we need to convert token positions back to line numbers, then
+merge nearby matches (ones that are only a few lines apart) into a single
+block rather than showing dozens of tiny fragments. Each resulting block gets
+rated high, medium, or low based on how much code it covers.
 """
 
 from pathlib import Path
@@ -25,15 +26,10 @@ def _token_line(tokens: List[Token], idx: int) -> int:
 
 def _canonical_line_to_source(canonical_line: int, source_map: List[SourceMapEntry]):
     """
-    Given a line number in the canonical text, find which original file it
-    came from and what line number it corresponds to in that file.
-
-    Returns (original_filename, original_line).
-    If the line falls in a file separator or outside any mapped region,
-    returns (None, None).
-
-    Mapping is always 1:1 with a fixed offset — canonical line N in an entry
-    corresponds to original line (original_start + N - canonical_start).
+    After canonicalization, all source files are stitched together into one long
+    text. This function takes a line number in that combined text and figures out
+    which original file it came from and what the original line number was.
+    Returns (None, None) if the line falls outside any recorded range.
     """
     for entry in source_map:
         if entry.canonical_start <= canonical_line <= entry.canonical_end:
@@ -44,10 +40,9 @@ def _canonical_line_to_source(canonical_line: int, source_map: List[SourceMapEnt
 
 def _load_source_lines(work_dir: Optional[Path], filename: str) -> List[str]:
     """
-    Loads the original source file and returns its lines (1-indexed friendly —
-    index 0 = line 1). Returns empty list if file can't be found.
-    Searches recursively under work_dir because the file could be nested
-    inside src/ or any subfolder from the ZIP.
+    Read a source file from disk and return its lines as a list so we can
+    extract specific line ranges for display. Searches the whole work directory
+    recursively in case the file is nested inside subdirectories.
     """
     if work_dir is None:
         return []
@@ -55,8 +50,6 @@ def _load_source_lines(work_dir: Optional[Path], filename: str) -> List[str]:
         matches = list(work_dir.rglob(Path(filename).name))
         if not matches:
             return []
-        # if multiple files with same name, pick the one whose path
-        # ends with the relative filename we have
         best = matches[0]
         for m in matches:
             if str(m).replace("\\", "/").endswith(filename.replace("\\", "/")):
@@ -68,22 +61,20 @@ def _load_source_lines(work_dir: Optional[Path], filename: str) -> List[str]:
 
 
 def _slice_code(lines: List[str], start: int, end: int) -> str:
-    """
-    Extracts lines start..end (both 1-indexed, inclusive) from the line list.
-    Returns them joined as a single string with newlines preserved.
-    """
+    """Pull out lines start through end (1-indexed, inclusive) from a list of lines."""
     if not lines:
         return ""
-    # clamp to actual file bounds
-    s = max(1, start) - 1       # convert to 0-indexed
-    e = min(len(lines), end)    # end is inclusive, so no -1 needed
+    s = max(1, start) - 1
+    e = min(len(lines), end)
     return "\n".join(lines[s:e])
 
 
 def _strip_and_collapse(code: str, lang: str) -> str:
     """
-    Strip comments from a code snippet (language-aware, handles string literals)
-    then collapse the blank lines left behind into at most one consecutive blank.
+    Strip comments from a code snippet and then collapse any runs of blank lines
+    down to a single blank line. This gives the instructor a cleaner view of
+    the matched code without comment noise, and without large gaps where comment
+    blocks used to be.
     """
     stripped = strip_comments(code, lang=lang)
     lines = stripped.splitlines()
@@ -103,11 +94,10 @@ def _strip_and_collapse(code: str, lang: str) -> str:
 
 def _compute_line_highlights(lines: List[str], start: int, end: int, lang: str) -> List[int]:
     """
-    Return 1-indexed line numbers within [start, end] that contain meaningful
-    code in the original source — i.e. non-comment, non-structural-only lines.
-
-    Used by the frontend to know exactly which lines to highlight in the full
-    code view, so comment-only and brace-only lines are not highlighted.
+    Figure out which specific line numbers within the matched block contain real
+    code — not just comments, blank lines, or lone braces. The frontend uses this
+    list to highlight exactly the meaningful lines rather than lighting up entire
+    blocks including boilerplate structure.
     """
     if not lines:
         return []
@@ -126,8 +116,10 @@ def _compute_line_highlights(lines: List[str], start: int, end: int, lang: str) 
 
 def _match_strength(token_count: int) -> str:
     """
-    Classify a match block by how many tokens it spans.
-    Rough heuristic: short matches are low confidence, long ones are high.
+    Rate the size of a matched block. A block covering at least 40 tokens is a
+    strong match — that's roughly 5 or more lines of real code. Between 15 and 39
+    tokens is a medium match. Anything smaller is flagged low because short
+    snippets could coincidentally appear in two unrelated submissions.
     """
     if token_count >= 40:
         return "high"
@@ -152,28 +144,20 @@ def build_evidence(
     lang: str = "mixed",
 ) -> List[dict]:
     """
-    For every shared fingerprint between submission A and B, find where in
-    each submission's token stream (and therefore original source files)
-    those matching k-grams appear.
-
-    Groups nearby matches into contiguous blocks so the instructor sees
-    "lines 10-25 in Main.java" rather than 15 individual 8-token matches.
-
-    canonical_text_a/b: if provided, uses canonical text for code extraction
-    (which has comments stripped). Otherwise loads from original files.
-    merge_gap: how many lines apart two match regions can be and still
-    get merged into one block. Tuned to 3 because in typical student code
-    a few blank lines between copied sections shouldn't split the evidence.
+    The main function in this file. It finds all fingerprint hashes that appear
+    in both submissions, converts those matches to line numbers in the original
+    source files, merges nearby matches into single blocks, filters out blocks
+    that are too small to be meaningful, and returns a ranked list of evidence
+    blocks for the report.
     """
     shared = set(fp_a.keys()) & set(fp_b.keys())
     if not shared:
         return []
 
-    # collect raw match pairs: (a_start_token, a_end_token, b_start_token, b_end_token)
     raw: List[Tuple[int, int, int, int]] = []
     for h in shared:
-        # cap positions per hash to prevent O(n²) explosion on adversarial
-        # inputs with thousands of identical repeated k-grams
+        # Cap at 50 positions per hash to prevent O(n²) blowup on adversarial inputs
+        # where the same k-gram repeats thousands of times (e.g. a file full of zeros).
         for ia in fp_a[h][:50]:
             for ib in fp_b[h][:50]:
                 ia_end = min(ia + k - 1, len(tok_a) - 1)
@@ -183,7 +167,8 @@ def build_evidence(
     if not raw:
         return []
 
-    # convert to line numbers for merging
+    # Convert token positions to line numbers before merging, since the merge
+    # logic works on line ranges and the frontend ultimately needs line numbers.
     line_pairs: List[Tuple[int, int, int, int]] = []
     for ia, ia_end, ib, ib_end in raw:
         a1 = _token_line(tok_a, ia)
@@ -192,17 +177,15 @@ def build_evidence(
         b2 = _token_line(tok_b, ib_end)
         line_pairs.append((a1, a2, b1, b2))
 
-    # sort by a_start then b_start
     line_pairs.sort(key=lambda x: (x[0], x[2]))
 
-    # merge overlapping/nearby blocks
+    # Merge pairs of blocks that are close together in BOTH submissions. We check
+    # both sides because checking only submission A was causing unrelated matches
+    # that happened to sit near each other in A (but were far apart in B) to be
+    # fused into one large fake evidence block.
     merged: List[Tuple[int, int, int, int]] = [line_pairs[0]]
     for a1, a2, b1, b2 in line_pairs[1:]:
         pa1, pa2, pb1, pb2 = merged[-1]
-        # merge only when BOTH A-side and B-side gaps are within merge_gap AND
-        # B-side is moving forward. Checking only A-side was causing unrelated
-        # matches that happened to be close in A but far apart in B to be fused
-        # into one large fake evidence block, producing false highlights.
         a_gap = a1 - pa2
         b_gap = b1 - pb2
         if a_gap <= merge_gap and b_gap <= merge_gap and b1 >= pb1:
@@ -210,11 +193,10 @@ def build_evidence(
         else:
             merged.append((a1, a2, b1, b2))
 
-    # Prepare canonical lines if provided (these have comments stripped)
     canonical_lines_a = canonical_text_a.splitlines() if canonical_text_a else None
     canonical_lines_b = canonical_text_b.splitlines() if canonical_text_b else None
 
-    # cache loaded source files so we don't re-read the same file for every block
+    # Cache file contents so we don't re-read the same file once per evidence block.
     _file_cache: Dict[str, List[str]] = {}
 
     def get_lines(work_dir, filename):
@@ -223,7 +205,6 @@ def build_evidence(
             _file_cache[key] = _load_source_lines(work_dir, filename)
         return _file_cache[key]
 
-    # translate canonical lines back to original file + line
     evidence_blocks = []
     for a1, a2, b1, b2 in merged:
         file_a, orig_a1 = _canonical_line_to_source(a1, source_map_a)
@@ -231,16 +212,15 @@ def build_evidence(
         file_b, orig_b1 = _canonical_line_to_source(b1, source_map_b)
         _, orig_b2      = _canonical_line_to_source(b2, source_map_b)
 
-        # fallback to canonical line if source map lookup fails
-        if file_a is None:
+        if file_a is None:  # fall back to canonical line numbers if source map lookup fails
             file_a, orig_a1, orig_a2 = "canonical", a1, a2
         if file_b is None:
             file_b, orig_b1, orig_b2 = "canonical", b1, b2
 
-        # Skip cross-language matches — only compare files of the same language family.
-        # Java vs C, Java vs C++ etc. produce meaningless fingerprint matches
-        # and must be excluded. Group extensions into families so .cpp/.cc/.cxx
-        # are all treated as C++ and can match each other.
+        # Skip matches between files of different languages. When submissions contain
+        # mixed languages, a Java fingerprint could accidentally match a C fingerprint
+        # because both were hashed from the same normalized token stream. These matches
+        # are meaningless and would confuse the instructor.
         _lang_family = {
             ".java":  "java",
             ".py":    "python",
@@ -260,9 +240,6 @@ def build_evidence(
         lb1 = orig_b1 or b1
         lb2 = orig_b2 or b2
 
-        # Load original source so professors see real student code (i++ stays
-        # i++, real variable names). Strip comments after loading so match
-        # blocks show only the actual matched code without comment noise.
         src_lines_a = get_lines(work_dir_a, file_a) if work_dir_a else []
         if src_lines_a:
             code_a = _strip_and_collapse(_slice_code(src_lines_a, la1, la2), lang)
@@ -279,10 +256,6 @@ def build_evidence(
         else:
             code_b = ""
 
-        # Count actual code lines after comment stripping for accurate strength.
-        # Exclude structural-only lines ({, }, };) — they don't represent
-        # real logic and inflate counts for transition blocks like closing
-        # braces + next method signature.
         def _meaningful_lines(code: str) -> int:
             count = 0
             for l in code.splitlines():
@@ -294,9 +267,9 @@ def build_evidence(
         a_code_lines = _meaningful_lines(code_a)
         b_code_lines = _meaningful_lines(code_b)
 
-        # Require at least 4 meaningful code lines on each side — filters out
-        # trivial blocks that share only structural tokens (return result; })
-        # while still catching real matches missed by the original threshold of 5.
+        # Require at least 4 meaningful lines on each side. This filters out blocks
+        # that are nothing but closing braces and return statements — those are
+        # structurally required by the language and don't indicate copying.
         if a_code_lines < 4 or b_code_lines < 4:
             continue
 
@@ -318,10 +291,8 @@ def build_evidence(
             "tokens_matched":    token_count,
         })
 
-    # sort by strength descending so frontend shows worst offences first
+    # Sort so the strongest matches appear first in the report.
     strength_order = {"high": 0, "medium": 1, "low": 2}
     evidence_blocks.sort(key=lambda e: strength_order.get(e["match_strength"], 3))
 
     return evidence_blocks
-
-
