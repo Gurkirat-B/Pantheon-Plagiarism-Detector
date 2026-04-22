@@ -13,7 +13,12 @@ export default function Footer() {
               <img
                 src="/logo.png"
                 alt="Pantheon Logo"
-                className="h-12 w-auto"
+                className="h-12 w-auto dark:hidden"
+              />
+              <img
+                src="/logo-white.png"
+                alt="Pantheon Logo"
+                className="hidden h-12 w-auto dark:block"
               />
             </div>
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">

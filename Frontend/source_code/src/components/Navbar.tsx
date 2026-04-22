@@ -50,7 +50,12 @@ export default async function Navbar() {
               <img
                 src="/logo.png"
                 alt="Pantheon Logo"
-                className="h-12 w-auto"
+                className="h-12 w-auto dark:hidden"
+              />
+              <img
+                src="/logo-white.png"
+                alt="Pantheon Logo"
+                className="hidden h-12 w-auto dark:block"
               />
             </div>
           </Link>
