@@ -64,20 +64,38 @@ if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
     sys.exit(0)
 
 # ── Pairwise mode ─────────────────────────────────────────────────────────────
-if len(sys.argv) < 3:
+# Usage:
+#   python3 compare.py <file_a> <file_b>
+#   python3 compare.py <file_a> <file_b> --template <boilerplate.zip>
+
+args = sys.argv[1:]
+
+# Pull out --template <path> if present
+template_path = None
+if "--template" in args:
+    idx = args.index("--template")
+    if idx + 1 < len(args):
+        template_path = args[idx + 1]
+        args = args[:idx] + args[idx + 2:]   # remove flag + value
+    else:
+        print("ERROR: --template requires a path argument")
+        sys.exit(1)
+
+if len(args) < 2:
     print("Usage:")
     print("  python3 compare.py <file_a> <file_b>")
+    print("  python3 compare.py <file_a> <file_b> --template <boilerplate.zip>")
     print("  python3 compare.py --batch <folder>")
     print()
     print("Examples:")
-    print("  python3 compare.py BST_original.java BST_copied.java")
-    print("  python3 compare.py --batch Engine/samples/")
+    print("  python3 compare.py student_03.zip student_10.zip --template boilerplate_submission.zip")
     sys.exit(1)
 
-a = resolve_file(sys.argv[1])
-b = resolve_file(sys.argv[2])
+a = resolve_file(args[0])
+b = resolve_file(args[1])
 
-result = compare(a, b, os.path.basename(a), os.path.basename(b))
+result = compare(a, b, os.path.basename(a), os.path.basename(b),
+                 template_path=template_path)
 
 if result.get('status') == 'failed':
     print(f"\n  ERROR: {result.get('error', 'Unknown error')}\n")

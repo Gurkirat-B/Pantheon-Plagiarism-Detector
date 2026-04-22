@@ -394,19 +394,22 @@ def compare(
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
 
             # Convert local line numbers (1-based within each file) to global
-            # concatenated-source line numbers.  The clamp must use local
-            # coordinates: compare `l` against the local range, then shift.
+            # concatenated-source line numbers. Clamp both ends: highlights must
+            # sit within [a1, a2] / [b1, b2] in global coords, which is
+            # [local_a1, local_a2] / [local_b1, local_b2] in local coords.
+            local_a1 = a1 - off_a   # lower bound in local coords
             local_a2 = a2 - off_a   # upper bound in local coords
+            local_b1 = b1 - off_b
             local_b2 = b2 - off_b
             block["line_highlights_a"] = [
                 l + off_a
                 for l in block.get("line_highlights_a", [])
-                if 1 <= l <= local_a2
+                if local_a1 <= l <= local_a2
             ]
             block["line_highlights_b"] = [
                 l + off_b
                 for l in block.get("line_highlights_b", [])
-                if 1 <= l <= local_b2
+                if local_b1 <= l <= local_b2
             ]
 
 
