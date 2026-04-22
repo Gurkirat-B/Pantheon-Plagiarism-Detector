@@ -345,7 +345,7 @@ function FullCodePanel({
                     <pre className="whitespace-pre text-foreground">
                       {color ? (
                         <>
-                          <span className={`rounded-sm px-0.5 ${color}`}>
+                          <span className={`rounded-sm px-0.5 text-slate-900 ${color}`}>
                             {codePart}
                           </span>
                           {comment && <span>{comment}</span>}
