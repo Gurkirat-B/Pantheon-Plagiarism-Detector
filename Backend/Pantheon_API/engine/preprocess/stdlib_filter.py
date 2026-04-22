@@ -42,12 +42,23 @@ _java_annotation_boilerplate_re = re.compile(
     re.MULTILINE,
 )
 
-# We only blank System.out calls that print a plain string literal or nothing at all.
-# Calls that print variables — like System.out.println("Error at index " + i) —
-# are kept, because if two submissions have the exact same print statement with
-# the same variable names, that is itself evidence of copying.
+# Only blank System.out/err calls whose entire argument is a plain string literal
+# or empty — these are pure labels like System.out.println("--- Results ---")
+# that appear in nearly every submission and carry no algorithmic content.
+# Calls that include variables (System.out.println("In-order: " + tree.inOrder()))
+# are kept because: (a) if the professor included them in a template they will be
+# removed by template fingerprint subtraction, and (b) if a student added them
+# independently and another student has the exact same call, that is genuine
+# evidence of copying.
 _java_sysout_re = re.compile(
     r"^[ \t]*System\s*\.\s*(?:out|err)\s*\.\s*\w+\s*\(\s*(?:\"[^\"]*\"|\'[^\']*\'|)\s*\);[ \t]*$",
+    re.MULTILINE,
+)
+
+# Common Scanner input calls. After normalization these collapse to ID.ID()
+# which matches across any program that reads input, regardless of what it reads.
+_java_scanner_re = re.compile(
+    r"^[ \t]*(?:\w+\s*=\s*)?\w+\s*\.\s*next(?:Line|Int|Double|Float|Long|Short|Byte|Boolean)?\s*\(\s*\);[ \t]*$",
     re.MULTILINE,
 )
 
@@ -120,12 +131,12 @@ _c_define_guard_re = re.compile(
     re.MULTILINE,
 )
 
-# Same rule as Java: only blank I/O calls with no variable content. If two
-# students have identical printf("Sorted array: %d", result) statements, that
-# is meaningful and should be kept for fingerprinting.
-_c_stdio_call_re = re.compile(
-    r"^[ \t]*(?:scanf|fscanf|sscanf|gets|fgets|getchar|getc)\s*\(.*\);[ \t]*$"
-    r"|^[ \t]*(?:printf|fprintf|sprintf|snprintf|puts|fputs|perror|putchar|putc)"
+# Blank scanf/input calls entirely — they carry no algorithmic content and
+# always normalize to the same token sequence regardless of which variable is read.
+# For printf/cout: only blank pure-string-literal or empty calls (same logic as Java).
+_c_stdio_re = re.compile(
+    r"^[ \t]*(?:scanf|fscanf|sscanf|gets|fgets|getchar|getc|fflush)\s*\(.*\);[ \t]*$"
+    r"|^[ \t]*(?:printf|fprintf|sprintf|snprintf|puts|fputs|perror|putchar|putc|vprintf|vfprintf)"
     r"\s*\(\s*(?:\"[^\"]*\"|\'[^\']*\'|stderr\s*,\s*\"[^\"]*\"|stdout\s*,\s*\"[^\"]*\"|)\s*\);[ \t]*$",
     re.MULTILINE,
 )
@@ -134,8 +145,9 @@ _cpp_stream_cin_re = re.compile(
     r"^[ \t]*(?:std\s*::\s*)?(?:cin|clog)\s*>>.*;[ \t]*$",
     re.MULTILINE,
 )
+# Only blank cout/cerr chains that contain no variables — purely string/endl output.
 _cpp_stream_re = re.compile(
-    r"^[ \t]*(?:std\s*::\s*)?(?:cout|cerr)\s*<<\s*"
+    r"^[ \t]*(?:std\s*::\s*)?(?:cout|cerr|clog)\s*<<\s*"
     r"(?:(?:\"[^\"]*\"|\'[^\']*\'|std\s*::\s*endl|endl|\"\\n\"|\s*)\s*(?:<<\s*(?:\"[^\"]*\"|\'[^\']*\'|std\s*::\s*endl|endl|\"\\n\"|\s*))*)\s*;[ \t]*$",
     re.MULTILINE,
 )
@@ -190,6 +202,17 @@ _python_import_re = re.compile(
     re.MULTILINE,
 )
 
+# Blank all print() and input() calls — after normalization they collapse to
+# the same token sequence across any two programs that do terminal I/O.
+_python_print_re = re.compile(
+    r"^[ \t]*print\s*\(.*\)[ \t]*$",
+    re.MULTILINE,
+)
+_python_input_re = re.compile(
+    r"^[ \t]*(?:\w+\s*=\s*)?input\s*\(.*\)[ \t]*$",
+    re.MULTILINE,
+)
+
 
 def filter_python_boilerplate(text: str) -> str:
     def _should_strip(match):
@@ -221,6 +244,11 @@ _js_require_re = re.compile(
 )
 
 JS_STDLIB_MODULES = {"fs", "path", "http", "https", "os", "util", "stream", "events"}
+
+_js_console_re = re.compile(
+    r"^[ \t]*console\s*\.\s*(?:log|warn|error|info|debug)\s*\(.*\);?[ \t]*$",
+    re.MULTILINE,
+)
 
 
 def filter_js_boilerplate(text: str) -> str:
@@ -256,34 +284,49 @@ def filter_boilerplate(text: str, lang: str) -> str:
 
 def blank_output_boilerplate(text: str, lang: str) -> str:
     """
-    Replaces output calls and main() declarations with empty lines so they are
-    excluded from fingerprinting without shifting any line numbers. This is applied
-    to the text used for fingerprinting only — the display version shown to
-    instructors still contains these lines so they can read the full submission.
+    Replaces I/O calls and main() declarations with empty lines so they are
+    excluded from fingerprinting without shifting any line numbers. Applied to
+    the fingerprint text only — the display version shown to instructors is
+    untouched so they can read the full submission.
+
+    All output/input calls are blanked regardless of their argument content.
+    After token normalization, print("label: " + x) and print("other: " + y)
+    produce identical token sequences, so keeping them creates false positives
+    across unrelated programs that happen to do I/O.
     """
     lang = (lang or "mixed").lower()
 
     if lang == "java":
         text = _java_sysout_re.sub("", text)
+        text = _java_scanner_re.sub("", text)
         text = _java_main_re.sub("", text)
         text = _java_null_guard_re.sub("", text)
         text = _java_this_assign_re.sub("", text)
     elif lang in ("c", "cpp", "c_or_cpp"):
-        text = _c_stdio_call_re.sub("", text)
+        text = _c_stdio_re.sub("", text)
         text = _cpp_stream_cin_re.sub("", text)
         text = _cpp_stream_re.sub("", text)
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
         text = _c_null_guard_re.sub("", text)
+    elif lang == "python":
+        text = _python_print_re.sub("", text)
+        text = _python_input_re.sub("", text)
+    elif lang in ("javascript", "typescript"):
+        text = _js_console_re.sub("", text)
     elif lang == "mixed":
         text = _java_sysout_re.sub("", text)
+        text = _java_scanner_re.sub("", text)
         text = _java_main_re.sub("", text)
         text = _java_null_guard_re.sub("", text)
         text = _java_this_assign_re.sub("", text)
-        text = _c_stdio_call_re.sub("", text)
+        text = _c_stdio_re.sub("", text)
         text = _cpp_stream_cin_re.sub("", text)
         text = _cpp_stream_re.sub("", text)
         text = _cpp_using_ns_re.sub("", text)
         text = _c_main_re.sub("", text)
         text = _c_null_guard_re.sub("", text)
+        text = _python_print_re.sub("", text)
+        text = _python_input_re.sub("", text)
+        text = _js_console_re.sub("", text)
     return text

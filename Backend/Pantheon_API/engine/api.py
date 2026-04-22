@@ -52,14 +52,14 @@ from engine.pdg.compare import pdg_similarity
 
 # k is the chunk size used by the Winnowing fingerprinting algorithm — it controls
 # how many consecutive tokens must match before we call it a shared sequence.
-# k=10 means roughly 4-5 lines of code. We tested k=8 but it flagged too many
-# coincidental patterns (like a function call ending with ", value);") that appear
-# in virtually every student submission. k=5 is used in a separate short-method
-# pass to catch very small helper functions that k=10 would miss entirely.
+# k=10 means roughly 4-5 lines of code. k=8 is used for the short-method pass
+# to catch small helper functions the primary pass misses. k=5 produced too many
+# false positives — after identifier/literal normalization, 5-token sequences
+# coincidentally match across completely unrelated algorithms.
 _K = 10
 _W = 5
-_K_SHORT = 5
-_W_SHORT = 3
+_K_SHORT = 8
+_W_SHORT = 4
 
 
 def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str = "mixed"):
@@ -108,12 +108,17 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
     ) if ast_result["parse_ok"] else {}
 
     # ── Subtree hashes for Phase 2B ──
-    # compute_subtree_hashes works on the canonical (filtered) text, not the
-    # raw source, so boilerplate doesn't pollute the structural hashes.
-    subtree_hashes = compute_subtree_hashes(fp_text, lang)
+    # Use the original source files (same as parse_submission) so tree-sitter
+    # gets valid syntax. Canonical text strips too many constructs for C/C++
+    # and causes parse_ok=False, producing empty hash sets and a zero AST score.
+    raw_src = "\n".join(
+        p.read_text(encoding="utf-8", errors="replace")
+        for p in source_files if p.is_file()
+    )
+    subtree_hashes = compute_subtree_hashes(raw_src, lang)
 
     # ── Per-method hashes for Phase 2B method-pair matching ──
-    method_hashes = per_method_hashes(fp_text, lang)
+    method_hashes = per_method_hashes(raw_src, lang)
 
     return {
         "lang":          lang,
@@ -179,6 +184,7 @@ def compare(
         if template_path:
             template_fp = _get_template_fingerprints(template_path, workdir / "template")
             fp_a = _subtract_fingerprints(fp_a, template_fp)
+            fp_b = _subtract_fingerprints(proc_b["fp"], template_fp)
 
         # ── Phase 2A + 2B: run in parallel ──
         # Both phases depend on Phase 1 (ast_result), which is already done inside
@@ -258,12 +264,17 @@ def compare(
             pdg_triggered = True
 
         # ── Evidence building ──
+        # Keep merge gaps small. A gap of 20 was absorbing entire neighbouring
+        # methods into one block when only one method actually matched, producing
+        # wildly asymmetric A/B regions. The upward walk below already recovers
+        # function signatures above the matched region, so a large merge gap is
+        # not needed for that purpose.
         if final >= 0.90:
-            merge_gap = 20
-        elif final >= 0.70:
             merge_gap = 6
+        elif final >= 0.70:
+            merge_gap = 4
         else:
-            merge_gap = 3
+            merge_gap = 2
 
         # Primary k-gram evidence pass (k=12)
         evidence = build_evidence(
@@ -353,29 +364,35 @@ def compare(
         full_a_lines = full_source_a.splitlines()
         full_b_lines = full_source_b.splitlines()
 
-        # floor_a / floor_b track the global line that is one past the end of
-        # the most recently finalised block on each side.  The upward-extension
-        # walk must not cross this boundary; otherwise two adjacent blocks would
-        # claim the same lines and produce inconsistent click-to-scroll
-        # behaviour on the frontend.
-        floor_a: int = 1
-        floor_b: int = 1
-
+        # Pass 1: convert all evidence blocks from per-file local coordinates to
+        # global coordinates in the concatenated fullCodeA/B. Do this in a separate
+        # pass before the upward-walk loop so the floor logic operates on global
+        # line numbers regardless of which file each block came from.
         for block in evidence:
             off_a = file_offsets_a.get(block.get("file_a", ""), 0)
             off_b = file_offsets_b.get(block.get("file_b", ""), 0)
             block["lines_a"] = [block["lines_a"][0] + off_a, block["lines_a"][1] + off_a]
             block["lines_b"] = [block["lines_b"][0] + off_b, block["lines_b"][1] + off_b]
 
+        # Sort by global start line before the upward-walk loop. Without this,
+        # a high-strength block at line 300 sets a floor that prevents the walk
+        # for a medium-strength block at line 100 from working correctly.
+        evidence.sort(key=lambda b: b["lines_a"][0])
+
+        # Pass 2: upward extension walk + fill code + recompute highlights.
+        # floor_a/floor_b track one past the end of the last finalised block so
+        # the walk never lets two adjacent blocks claim the same lines.
+        floor_a: int = 1
+        floor_b: int = 1
+
+        for block in evidence:
             a1, a2 = block["lines_a"]
             b1, b2 = block["lines_b"]
 
-            # Walk upward from the top of the matched block and keep extending it as
-            # long as the lines immediately above are also identical in both submissions.
-            # This recovers function signatures and class headers that were copied verbatim
-            # but sit just above the k-gram matching threshold.
-            # Clamped to floor_a / floor_b so we never overlap the previous block.
-            while a1 > floor_a and b1 > floor_b:
+            # Walk upward from the top of the matched block as long as the lines
+            # immediately above are identical in both submissions. Recovers function
+            # signatures and class headers that sit just above the k-gram threshold.
+            while a1 > floor_a and b1 > floor_b and a1 > 1 and b1 > 1:
                 la = full_a_lines[a1 - 2].strip()
                 lb = full_b_lines[b1 - 2].strip()
                 if la and lb and la == lb:
@@ -386,31 +403,26 @@ def compare(
             block["lines_a"] = [a1, a2]
             block["lines_b"] = [b1, b2]
 
-            # Advance the floor so the next block cannot extend into this one.
             floor_a = a2 + 1
             floor_b = b2 + 1
 
             block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
 
-            # Convert local line numbers (1-based within each file) to global
-            # concatenated-source line numbers. Clamp both ends: highlights must
-            # sit within [a1, a2] / [b1, b2] in global coords, which is
-            # [local_a1, local_a2] / [local_b1, local_b2] in local coords.
-            local_a1 = a1 - off_a   # lower bound in local coords
-            local_a2 = a2 - off_a   # upper bound in local coords
-            local_b1 = b1 - off_b
-            local_b2 = b2 - off_b
-            block["line_highlights_a"] = [
-                l + off_a
-                for l in block.get("line_highlights_a", [])
-                if local_a1 <= l <= local_a2
-            ]
-            block["line_highlights_b"] = [
-                l + off_b
-                for l in block.get("line_highlights_b", [])
-                if local_b1 <= l <= local_b2
-            ]
+            # Recompute highlights from the final global line range. This handles
+            # three cases correctly: AST blocks (start with empty highlights),
+            # k-gram blocks extended upward by the walk (new lines had no highlights),
+            # and any coordinate mismatch from the old local→global transform.
+            block["line_highlights_a"] = _highlight_lines(full_a_lines, a1, a2, lang)
+            block["line_highlights_b"] = _highlight_lines(full_b_lines, b1, b2, lang)
+
+        # Re-sort by strength for the final report now that line-order processing
+        # is complete.
+        _strength_order = {"high": 0, "medium": 1, "low": 2}
+        evidence.sort(key=lambda b: (
+            _strength_order.get(b.get("match_strength", "low"), 2),
+            b["lines_a"][0],
+        ))
 
 
         # If the submissions are essentially identical (>=95% similarity score), replace
@@ -751,6 +763,28 @@ def _deduplicate_evidence_1to1(evidence: list) -> list:
         -strength_rank.get(b.get("match_strength", "low"), 0),
         b["lines_a"][0],
     ))
+    return result
+
+
+def _highlight_lines(src_lines: list, g1: int, g2: int, lang: str) -> list:
+    """
+    Return the global line numbers within [g1, g2] that contain real code —
+    not blank lines, lone braces, or comments. Called after the upward-extension
+    walk so highlights always cover the final extended range, and for AST evidence
+    blocks that start with empty highlight lists.
+
+    All returned line numbers are in the same global coordinate space as g1/g2
+    (i.e. positions in the concatenated fullCodeA/B string) so the frontend can
+    apply them directly without any further conversion.
+    """
+    _STRUCTURAL_ONLY = {"{", "}", "};", "{;", "});", "})"}
+    snippet = "\n".join(src_lines[g1 - 1:g2])
+    stripped = strip_comments(snippet, lang)
+    result = []
+    for i, line in enumerate(stripped.splitlines()):
+        content = line.strip()
+        if content and content not in _STRUCTURAL_ONLY:
+            result.append(g1 + i)
     return result
 
 

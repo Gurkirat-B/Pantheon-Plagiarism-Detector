@@ -1,37 +1,38 @@
 """
-Similarity scoring — v2 formula (ENGINE_DESIGN.md §7).
+Similarity scoring — v3 formula.
+
+AST is the primary detector. K-gram is the verifier. PDG is the final refinement.
 
 Base score (always computed, every pair):
 
-    K-gram group (0.45 total):
-        Jaccard              × 0.10
-        Containment          × 0.20
-        Cosine               × 0.15
+    AST group (0.55 total)  — primary, rename/literal-resistant:
+        Subtree similarity   × 0.30
+        Method-pair match    × 0.25
 
-    AST group (0.45 total):
-        Subtree similarity   × 0.25
-        Method-pair match    × 0.20
+    K-gram group (0.35 total) — verification, token-level confirmation:
+        Containment          × 0.15
+        Cosine               × 0.12
+        Jaccard              × 0.08
 
     Supporting (0.10 total):
         Structural cosine    × 0.10
                               ──────
         Base total            1.00
 
-K-gram and AST groups carry exactly equal total weight (0.45 each). This is
-the central design decision — both are primary signals, neither can gate the
-other. A pair that scores near zero on k-grams but 0.72 on AST still lands
-in the suspicious range.
+AST carries higher weight because it is resistant to the most common obfuscation
+techniques (identifier renaming, literal substitution, loop-type swaps). K-gram
+confirms that the actual token content in the matched regions also agrees.
 
 PDG modifier (conditional, applied by apply_pdg_modifier()):
     final_score = base_score × 0.80 + pdg_similarity × 0.20
 
-The individual metric functions (jaccard, containment, cosine_similarity_tokens,
-structural_cosine) are unchanged from v1. Only weighted_score() has new
-parameters for the AST signals.
+Fallback when AST signals are absent (tree-sitter unavailable or unsupported
+language): the 0.55 AST weight is redistributed to the k-gram group proportionally
+so the formula still sums to 1.0:
+    jaccard × 0.18 + containment × 0.33 + cosine × 0.27 + structural × 0.22
 
-Fallback behaviour: if AST signals are not provided (e.g. tree-sitter unavailable
-or language unsupported), the AST group collapses to 0 and the k-gram group
-weights are scaled proportionally so the formula still sums to 1.0.
+Fallback when token lists are absent too:
+    jaccard × 0.36 + containment × 0.64
 """
 
 import math
@@ -176,33 +177,34 @@ def weighted_score(
     struct = structural_cosine(tok_a, tok_b)        if has_tokens else None
 
     if has_ast and has_tokens:
-        # Full v2 formula
+        # Full v3 formula — AST primary (0.55), k-gram verification (0.35), supporting (0.10)
         final = round(
-            0.10 * j
-            + 0.20 * c
-            + 0.15 * cos
-            + 0.25 * ast_subtree_similarity
-            + 0.20 * method_pair_match
+            0.30 * ast_subtree_similarity
+            + 0.25 * method_pair_match
+            + 0.15 * c
+            + 0.12 * cos
+            + 0.08 * j
             + 0.10 * struct,
             4,
         )
     elif has_ast and not has_tokens:
-        # AST available, no token lists
+        # AST available, no token lists — redistribute k-gram weight to j+c only
         final = round(
-            0.15 * j
-            + 0.30 * c
-            + 0.25 * ast_subtree_similarity
-            + 0.20 * method_pair_match,
+            0.30 * ast_subtree_similarity
+            + 0.25 * method_pair_match
+            + 0.29 * c
+            + 0.16 * j,
             4,
         )
     elif not has_ast and has_tokens:
-        # Fallback: no AST — redistribute 0.45 AST weight to k-gram group
-        # (preserves relative k-gram weights from v1)
+        # No AST — redistribute 0.55 AST weight to k-gram group proportionally:
+        # original k-gram ratios: j=0.08, c=0.15, cos=0.12, struct=0.10 (total 0.45)
+        # scaled to sum to 1.0: j×0.18, c×0.33, cos×0.27, struct×0.22
         final = round(
-            0.16 * j
-            + 0.32 * c
-            + 0.24 * cos
-            + 0.28 * struct,
+            0.18 * j
+            + 0.33 * c
+            + 0.27 * cos
+            + 0.22 * struct,
             4,
         )
     else:

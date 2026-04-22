@@ -283,10 +283,11 @@ def build_evidence(
         a_code_lines = _meaningful_lines(code_a)
         b_code_lines = _meaningful_lines(code_b)
 
-        # Require at least 4 meaningful lines on each side. This filters out blocks
-        # that are nothing but closing braces and return statements — those are
-        # structurally required by the language and don't indicate copying.
-        if a_code_lines < 4 or b_code_lines < 4:
+        # Require at least 6 meaningful lines on each side. 4 was too low — it
+        # let through blocks that were entirely println/printf calls, which after
+        # token normalization produce identical hashes across unrelated programs.
+        # 6 lines of real algorithmic code is the minimum to be convincing evidence.
+        if a_code_lines < 6 or b_code_lines < 6:
             continue
 
         token_count = max(a_code_lines, b_code_lines) * 8
@@ -390,6 +391,13 @@ def build_ast_evidence(
         b1 = info_b["start_line"]
         b2 = info_b["end_line"]
 
+        # Extract the filename from the function map key ("file.java::funcName")
+        # so the offset lookup in api.py uses the right file offset. If there is
+        # no "::" prefix (single-file submission), fall back to empty string
+        # which maps to offset 0 in file_offsets.
+        file_a_name = name_a.split("::")[0] if "::" in name_a else ""
+        file_b_name = name_b.split("::")[0] if "::" in name_b else ""
+
         # Skip if lines already claimed by a stronger match
         a_lines = set(range(a1, a2 + 1))
         b_lines = set(range(b1, b2 + 1))
@@ -406,11 +414,11 @@ def build_ast_evidence(
         token_count = max(info_a.get("token_count", 10), info_b.get("token_count", 10))
 
         evidence_blocks.append({
-            "file_a":            "",   # filled by api.py — we don't know filenames here
+            "file_a":            file_a_name,
             "lines_a":           [a1, a2],
-            "code_a":            "",   # filled by api.py
-            "line_highlights_a": [],
-            "file_b":            "",
+            "code_a":            "",   # filled by api.py after offset conversion
+            "line_highlights_a": [],   # recomputed by api.py after offset conversion
+            "file_b":            file_b_name,
             "lines_b":           [b1, b2],
             "code_b":            "",
             "line_highlights_b": [],

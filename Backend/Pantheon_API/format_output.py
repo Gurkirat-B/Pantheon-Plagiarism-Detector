@@ -196,6 +196,20 @@ def format_report_as_json(result) -> dict:
             "codeB":            block.get("code_b", ""),
         })
 
+    score_breakdown = {
+        "weightedFinal":    round(final * 100, 1),
+        "jaccard":          round(scores.get("jaccard",        0.0) * 100, 1),
+        "containment":      round(scores.get("containment",    0.0) * 100, 1),
+        "cosine":           round(scores.get("cosine",         0.0) * 100, 1),
+        "structural":       round(scores.get("structural",     0.0) * 100, 1),
+        "astSubtree":       round(scores.get("ast_subtree",    0.0) * 100, 1),
+        "methodPair":       round(scores.get("method_pair",    0.0) * 100, 1),
+        "callgraphSim":     round(scores.get("callgraph_sim",  0.0) * 100, 1),
+        "pdgSimilarity":    round(scores.get("pdg_similarity", 0.0) * 100, 1),
+        "pdgTriggered":     result.get("pdg_triggered", False),
+        "pdgTriggerReason": result.get("pdg_trigger_reason", None),
+    }
+
     return {
         "submissionA":                  result.get("submission_a", "A"),
         "submissionB":                  result.get("submission_b", "B"),
@@ -209,6 +223,7 @@ def format_report_as_json(result) -> dict:
         "Medium":                       medium,
         "Low":                          low,
         "matches":                      matches,
+        "scoreBreakdown":               score_breakdown,
         # Single concatenated source string — all files from the ZIP joined in
         # sorted order. Evidence block linesA/B are line numbers within this view.
         "fullCodeA":                    result.get("full_source_a", ""),
