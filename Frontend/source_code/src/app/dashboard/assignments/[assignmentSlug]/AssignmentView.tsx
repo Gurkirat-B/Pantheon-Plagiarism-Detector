@@ -23,6 +23,7 @@ import {
   Loader2,
   ArrowUp,
   ArrowDown,
+  Trash2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +37,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LoadingButton } from "@/components/LoadingButton";
 import {
   FileUploadDialog,
@@ -885,6 +896,52 @@ function ExportConfirmDialog({
   );
 }
 
+// ─── Delete Boilerplate Dialog ────────────────────────────────────────────────
+
+function DeleteBoilerplateDialog({
+  open,
+  onClose,
+  filename,
+  onConfirm,
+  loading,
+}: {
+  open: boolean;
+  onClose: () => void;
+  filename: string;
+  onConfirm: () => void;
+  loading: boolean;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onClose}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Boilerplate Code?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete{" "}
+            <span className="font-mono font-semibold text-foreground">
+              {filename}
+            </span>
+            . This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              onConfirm();
+            }}
+            disabled={loading}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {loading ? "Deleting..." : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // ─── Compare All Success Dialog ───────────────────────────────────────────────
 
 function CompareAllSuccessDialog({
@@ -1052,6 +1109,8 @@ export function AssignmentView({
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [viewResourcesOpen, setViewResourcesOpen] = useState(false);
+  const [deleteBoilerplateOpen, setDeleteBoilerplateOpen] = useState(false);
+  const [deletingBoilerplate, setDeletingBoilerplate] = useState(false);
   const [boilerplateFilename, setBoilerplateFilename] = useState<string | null>(
     initialBoilerplateFilename,
   );
@@ -1181,6 +1240,29 @@ export function AssignmentView({
       toast({ variant: "destructive", title: "Export failed." });
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleDeleteBoilerplate = async () => {
+    setDeletingBoilerplate(true);
+    try {
+      const res = await fetch(
+        `/api/submissions/boilerplate/${assignment.assignment_id}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast({ variant: "destructive", title: data.message ?? "Failed to delete boilerplate." });
+        return;
+      }
+      setBoilerplateFilename(null);
+      setDeleteBoilerplateOpen(false);
+      router.refresh();
+      toast({ title: "Boilerplate deleted successfully." });
+    } catch {
+      toast({ variant: "destructive", title: "Failed to delete boilerplate." });
+    } finally {
+      setDeletingBoilerplate(false);
     }
   };
 
@@ -1336,6 +1418,18 @@ export function AssignmentView({
                   <FolderOpen className="mr-2 h-4 w-4" />
                   View resources
                 </DropdownMenuItem>
+                {boilerplateFilename && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setDeleteBoilerplateOpen(true)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete boilerplate
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
@@ -1404,6 +1498,14 @@ export function AssignmentView({
           )}
         </div>
       </div>
+
+      <DeleteBoilerplateDialog
+        open={deleteBoilerplateOpen}
+        onClose={() => setDeleteBoilerplateOpen(false)}
+        filename={boilerplateFilename ?? ""}
+        onConfirm={handleDeleteBoilerplate}
+        loading={deletingBoilerplate}
+      />
 
       <ViewResourcesDialog
         open={viewResourcesOpen}
