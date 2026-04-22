@@ -119,8 +119,8 @@ function ChangePasswordDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-            <KeyRound className="h-4 w-4 text-slate-600" />
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
           </div>
           <DialogTitle className="text-lg">Change password</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
@@ -251,7 +251,7 @@ function DeleteAccountDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-red-50">
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40">
             <Trash2 className="h-4 w-4 text-destructive" />
           </div>
           <AlertDialogTitle className="text-lg">
@@ -261,16 +261,16 @@ function DeleteAccountDialog({
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>
                 This will{" "}
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-foreground">
                   permanently delete
                 </span>{" "}
                 your account, all your courses, and all associated submissions.
                 This action{" "}
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-foreground">
                   cannot be undone.
                 </span>
               </p>
-              <div className="rounded-md border border-destructive/20 bg-red-50/60 px-3 py-2.5">
+              <div className="rounded-md border border-destructive/20 bg-red-50/60 px-3 py-2.5 dark:bg-red-950/30">
                 <p className="text-xs font-medium text-destructive">
                   Type{" "}
                   <span className="select-none font-mono font-semibold">
@@ -332,7 +332,7 @@ export function AccountButton({ name, email }: AccountButtonProps) {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="flex h-9 items-center gap-2.5 border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-100 hover:shadow-none"
+            className="flex h-9 items-center gap-2.5 border border-border bg-muted/40 text-sm font-medium text-foreground shadow-sm transition-all hover:bg-muted hover:shadow-none"
           >
             {/* Avatar circle */}
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold tracking-wide text-white">
@@ -350,7 +350,7 @@ export function AccountButton({ name, email }: AccountButtonProps) {
                 {initials}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-800">
+                <p className="truncate text-sm font-semibold text-foreground">
                   {name || "Professor"}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -358,9 +358,9 @@ export function AccountButton({ name, email }: AccountButtonProps) {
                 </p>
               </div>
             </div>
-            <div className="mt-2.5 flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              <span className="text-xs text-slate-500">Professor account</span>
+            <div className="mt-2.5 flex items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Professor account</span>
             </div>
           </div>
 
@@ -369,7 +369,7 @@ export function AccountButton({ name, email }: AccountButtonProps) {
           {/* Account details submenu */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="gap-2 px-3 py-2 text-sm">
-              <User className="h-4 w-4 text-slate-500" />
+              <User className="h-4 w-4 text-muted-foreground" />
               Account details
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>
@@ -378,7 +378,7 @@ export function AccountButton({ name, email }: AccountButtonProps) {
                   className="gap-2 px-3 py-2 text-sm"
                   onClick={() => setActiveDialog("password")}
                 >
-                  <KeyRound className="h-4 w-4 text-slate-500" />
+                  <KeyRound className="h-4 w-4 text-muted-foreground" />
                   Change password
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

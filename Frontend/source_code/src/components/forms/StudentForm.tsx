@@ -83,7 +83,7 @@ export default function StudentForm({
     <Form {...studentForm}>
       <form
         onSubmit={studentForm.handleSubmit(onSubmit)}
-        className="mx-auto max-w-3xl space-y-7 rounded-2xl px-7 py-10 shadow-[0px_0px_30px_rgba(0,44,122,0.13)] sm:px-10"
+        className="mx-auto max-w-3xl space-y-7 rounded-2xl bg-white px-7 py-10 shadow-[0px_0px_30px_rgba(0,44,122,0.13)] dark:bg-zinc-900 sm:px-10"
       >
         <div className="flex w-full flex-col gap-2 text-center">
           <div className="text-2xl font-bold lg:text-3xl">Welcome Student</div>

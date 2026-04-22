@@ -3,7 +3,7 @@ import Link from "next/link";
 /* eslint-disable @next/next/no-img-element */
 export default function Footer() {
   return (
-    <footer className="border-t border-slate-200 bg-slate-50">
+    <footer className="border-t border-border bg-muted/40">
       <div className="mx-auto max-w-7xl px-8 py-14 min-[2000px]:max-w-[2000px]">
         {/* Main grid */}
         <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-12">
@@ -16,7 +16,7 @@ export default function Footer() {
                 className="h-12 w-auto"
               />
             </div>
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-500">
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
               Advanced code plagiarism detection system ensuring academic
               integrity through similarity analysis and comprehensive reporting.
             </p>
@@ -28,7 +28,7 @@ export default function Footer() {
                 <Link
                   href="/coming-soon"
                   title="Twitter"
-                  className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-white transition-all duration-200 hover:bg-[#d40f0d] focus:bg-[#d40f0d]"
+                  className="flex size-7 items-center justify-center rounded-full bg-foreground text-background transition-all duration-200 hover:bg-[#d40f0d] focus:bg-[#d40f0d]"
                 >
                   <svg
                     className="h-4 w-4"
@@ -46,7 +46,7 @@ export default function Footer() {
                 <Link
                   href="/coming-soon"
                   title="Facebook"
-                  className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-white transition-all duration-200 hover:bg-[#d40f0d] focus:bg-[#d40f0d]"
+                  className="flex size-7 items-center justify-center rounded-full bg-foreground text-background transition-all duration-200 hover:bg-[#d40f0d] focus:bg-[#d40f0d]"
                 >
                   <svg
                     className="h-4 w-4"
@@ -64,7 +64,7 @@ export default function Footer() {
                 <Link
                   href="/coming-soon"
                   title="Instagram"
-                  className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-white transition-all duration-200 hover:bg-[#d40f0d] focus:bg-[#d40f0d]"
+                  className="flex size-7 items-center justify-center rounded-full bg-foreground text-background transition-all duration-200 hover:bg-[#d40f0d] focus:bg-[#d40f0d]"
                 >
                   <svg
                     className="h-4 w-4"
@@ -83,14 +83,14 @@ export default function Footer() {
 
           {/* Links — Company (trimmed) */}
           <div className="lg:col-span-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Company
             </p>
             <ul className="mt-5 space-y-3.5">
               <li>
                 <Link
                   href="/about-us"
-                  className="text-sm text-slate-600 transition-colors duration-150 hover:text-[#d40f0d]"
+                  className="text-sm text-muted-foreground transition-colors duration-150 hover:text-[#d40f0d]"
                 >
                   About Us
                 </Link>
@@ -100,14 +100,14 @@ export default function Footer() {
 
           {/* Links — Help (trimmed) */}
           <div className="lg:col-span-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Help
             </p>
             <ul className="mt-5 space-y-3.5">
               <li>
                 <Link
                   href="/customer-support"
-                  className="text-sm text-slate-600 transition-colors duration-150 hover:text-[#d40f0d]"
+                  className="text-sm text-muted-foreground transition-colors duration-150 hover:text-[#d40f0d]"
                 >
                   Customer Support
                 </Link>
@@ -115,7 +115,7 @@ export default function Footer() {
               <li>
                 <Link
                   href="/terms"
-                  className="text-sm text-slate-600 transition-colors duration-150 hover:text-[#d40f0d]"
+                  className="text-sm text-muted-foreground transition-colors duration-150 hover:text-[#d40f0d]"
                 >
                   Terms &amp; Conditions
                 </Link>
@@ -125,11 +125,11 @@ export default function Footer() {
         </div>
 
         {/* Divider + copyright */}
-        <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-slate-200 pt-8 sm:flex-row">
-          <p className="text-xs text-slate-400">
+        <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 sm:flex-row">
+          <p className="text-xs text-muted-foreground">
             © {new Date().getFullYear()} Pantheon. All rights reserved.
           </p>
-          <p className="text-xs text-slate-300">
+          <p className="text-xs text-muted-foreground/60">
             Built for academic integrity.
           </p>
         </div>

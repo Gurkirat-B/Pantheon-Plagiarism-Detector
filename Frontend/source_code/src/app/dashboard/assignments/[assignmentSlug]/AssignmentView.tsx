@@ -95,37 +95,37 @@ function formatDateTime(dateStr: string) {
 function getSeverityClass(severity: MatchSeverity) {
   switch (severity) {
     case "HIGH":
-      return "border-red-200 bg-red-50 text-red-700";
+      return "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400";
     case "MEDIUM":
-      return "border-orange-200 bg-orange-50 text-orange-700";
+      return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950/50 dark:text-orange-400";
     case "LOW":
-      return "border-yellow-200 bg-yellow-50 text-yellow-700";
+      return "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/50 dark:text-yellow-400";
   }
 }
 
 function getLevelColor(level: string) {
   switch (level) {
     case "CRITICAL":
-      return "text-red-600";
+      return "text-red-600 dark:text-red-400";
     case "HIGH":
-      return "text-orange-500";
+      return "text-orange-500 dark:text-orange-400";
     case "MEDIUM":
-      return "text-yellow-600";
+      return "text-yellow-600 dark:text-yellow-400";
     default:
-      return "text-emerald-600";
+      return "text-emerald-600 dark:text-emerald-400";
   }
 }
 
 function getLevelBg(level: string) {
   switch (level) {
     case "CRITICAL":
-      return "bg-red-50 border-red-200";
+      return "bg-red-50 border-red-200 dark:bg-red-950/50 dark:border-red-900";
     case "HIGH":
-      return "bg-orange-50 border-orange-200";
+      return "bg-orange-50 border-orange-200 dark:bg-orange-950/50 dark:border-orange-900";
     case "MEDIUM":
-      return "bg-yellow-50 border-yellow-200";
+      return "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/50 dark:border-yellow-900";
     default:
-      return "bg-emerald-50 border-emerald-200";
+      return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-900";
   }
 }
 
@@ -137,25 +137,25 @@ function getLevelCardClass(level: string): {
     case "CRITICAL":
       return {
         label: "CRITICAL",
-        className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
+        className: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950",
       };
     case "HIGH":
       return {
         label: "HIGH",
         className:
-          "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100",
+          "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950/50 dark:text-orange-400 dark:hover:bg-orange-950",
       };
     case "MEDIUM":
       return {
         label: "MEDIUM",
         className:
-          "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100",
+          "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:border-yellow-900 dark:bg-yellow-950/50 dark:text-yellow-400 dark:hover:bg-yellow-950",
       };
     default:
       return {
         label: "LOW",
         className:
-          "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+          "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-400 dark:hover:bg-emerald-950",
       };
   }
 }
@@ -284,15 +284,15 @@ function FullCodePanel({
   const lines = code.split("\n");
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-slate-200">
-      <div className="border-b border-slate-200 bg-gray-200 px-4 py-3">
-        <p className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-500">
+    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-border">
+      <div className="border-b border-border bg-muted px-4 py-3">
+        <p className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </p>
-        <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
+        <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
           {fileName}
         </p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           Click a highlighted line to scroll the other panel to its match.
         </p>
       </div>
@@ -327,11 +327,11 @@ function FullCodePanel({
                       : undefined
                   }
                 >
-                  <td className="w-10 select-none px-3 py-0 text-right align-top text-slate-300">
+                  <td className="w-10 select-none px-3 py-0 text-right align-top text-muted-foreground">
                     {lineNum}
                   </td>
                   <td className="px-3 py-0">
-                    <pre className="whitespace-pre text-slate-800">
+                    <pre className="whitespace-pre text-foreground">
                       {color ? (
                         <>
                           <span className={`rounded-sm px-0.5 ${color}`}>
@@ -477,7 +477,7 @@ function ComparisonDialog({
                 onClick={() => setViewMode("blocks")}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   viewMode === "blocks"
-                    ? "bg-white text-slate-800 shadow-sm"
+                    ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -488,7 +488,7 @@ function ComparisonDialog({
                 onClick={() => setViewMode("fullcode")}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   viewMode === "fullcode"
-                    ? "bg-white text-slate-800 shadow-sm"
+                    ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -538,7 +538,7 @@ function ComparisonDialog({
 
           {report.techniques.length > 0 && (
             <div className="mx-6 mt-5">
-              <p className="mb-2 text-sm font-semibold text-slate-700">
+              <p className="mb-2 text-sm font-semibold text-foreground">
                 Alteration Techniques Detected
               </p>
               <div className="flex flex-wrap gap-2">
@@ -553,7 +553,7 @@ function ComparisonDialog({
 
           {viewMode === "blocks" && (
             <div className="mx-6 my-5 space-y-3">
-              <p className="text-sm font-semibold text-slate-700">
+              <p className="text-sm font-semibold text-foreground">
                 Matching Code Sections ({report.totalBlocks} blocks)
               </p>
               {report.matches.map((match) => (
@@ -790,18 +790,18 @@ function ViewResourcesDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FolderOpen className="h-5 w-5 text-slate-500" />
+            <FolderOpen className="h-5 w-5 text-muted-foreground" />
             Assignment Resources
           </DialogTitle>
         </DialogHeader>
         <div className="mt-2 space-y-3">
-          <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-3">
             <div>
-              <p className="text-sm font-medium text-slate-800">
+              <p className="text-sm font-medium text-foreground">
                 Boilerplate Code
               </p>
               {boilerplateFilename ? (
-                <p className="font-mono text-xs text-slate-600">
+                <p className="font-mono text-xs text-muted-foreground">
                   {boilerplateFilename}
                 </p>
               ) : (
@@ -811,8 +811,8 @@ function ViewResourcesDialog({
               )}
             </div>
           </div>
-          <div className="rounded-lg border bg-slate-50 px-4 py-3">
-            <p className="mb-2 text-sm font-medium text-slate-800">
+          <div className="rounded-lg border bg-muted/40 px-4 py-3">
+            <p className="mb-2 text-sm font-medium text-foreground">
               Repository Files
             </p>
             {repoUploads.length === 0 ? (
@@ -822,9 +822,9 @@ function ViewResourcesDialog({
                 {repoUploads.map((upload) => (
                   <div
                     key={upload.upload_id}
-                    className="flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-1.5"
+                    className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-1.5"
                   >
-                    <span className="truncate font-mono text-xs text-slate-700">
+                    <span className="truncate font-mono text-xs text-foreground">
                       {upload.filename}
                     </span>
                     <span className="flex-shrink-0 whitespace-nowrap text-xs text-muted-foreground">
@@ -905,7 +905,7 @@ function CompareAllSuccessDialog({
       <DialogContent className="max-w-sm text-center">
         <div className="flex flex-col items-center gap-4 py-4">
           {/* Icon */}
-          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/50">
             <ShieldAlert className="h-7 w-7 text-emerald-600" />
           </div>
 
@@ -915,19 +915,19 @@ function CompareAllSuccessDialog({
           </div>
 
           {/* Stats */}
-          <div className="w-full divide-y rounded-lg border bg-slate-50">
+          <div className="w-full divide-y rounded-lg border bg-muted/40">
             <div className="flex items-center justify-between px-4 py-3">
               <span className="text-sm text-muted-foreground">
                 Total pairs analysed
               </span>
-              <span className="text-sm font-semibold text-slate-800">
+              <span className="text-sm font-semibold text-foreground">
                 {totalPairs}
               </span>
             </div>
           </div>
-          <div className="flex w-full items-start gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
-            <p className="text-xs leading-relaxed text-blue-700">
+          <div className="flex w-full items-start gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left dark:border-blue-900 dark:bg-blue-950/50">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
+            <p className="text-xs leading-relaxed text-blue-700 dark:text-blue-400">
               To review results, click the{" "}
               <span className="inline-flex items-center gap-1 font-medium">
                 <Code2 className="h-3 w-3" />
@@ -959,10 +959,10 @@ function SubmissionRow({
   onDetail: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-white px-5 py-4 transition-colors hover:bg-slate-50">
+    <div className="flex items-center justify-between rounded-lg border bg-card px-5 py-4 transition-colors hover:bg-muted/40">
       <div>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-semibold text-slate-800">
+          <span className="font-mono text-sm font-semibold text-foreground">
             {submission.email}
           </span>
           <Badge variant="outline" className="font-mono text-xs">
@@ -971,14 +971,14 @@ function SubmissionRow({
           {hasReports ? (
             <Badge
               variant="outline"
-              className="border-blue-200 bg-blue-50 text-xs text-blue-700"
+              className="border-blue-200 bg-blue-50 text-xs text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400"
             >
               Compared
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="border-slate-200 bg-slate-50 text-xs text-slate-400"
+              className="border-border bg-muted text-xs text-muted-foreground"
             >
               Not compared
             </Badge>
@@ -986,7 +986,7 @@ function SubmissionRow({
           {isHighRisk && (
             <Badge
               variant="outline"
-              className="border-red-200 bg-red-50 text-xs text-red-700"
+              className="border-red-200 bg-red-50 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400"
             >
               High Risk
             </Badge>
@@ -1237,7 +1237,7 @@ export function AssignmentView({
           <Minus className="h-3 w-3" />
           <span>{course.name}</span>
         </div>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
+        <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
           {assignment.title}
         </h1>
         <p className="mt-1 text-muted-foreground">
@@ -1249,11 +1249,11 @@ export function AssignmentView({
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
-              <Users className="h-5 w-5 text-slate-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+              <Users className="h-5 w-5 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-800">
+              <p className="text-2xl font-bold text-foreground">
                 {submissions.length}
               </p>
               <p className="text-sm text-muted-foreground">Total Submissions</p>
@@ -1263,11 +1263,11 @@ export function AssignmentView({
 
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50">
-              <TrendingUp className="h-5 w-5 text-orange-500" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50 dark:bg-orange-950/50">
+              <TrendingUp className="h-5 w-5 text-orange-500 dark:text-orange-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-800">
+              <p className="text-2xl font-bold text-foreground">
                 {avgScore != null ? `${avgScore}%` : "—"}
               </p>
               <p className="text-sm text-muted-foreground">Avg. Similarity</p>
@@ -1277,11 +1277,11 @@ export function AssignmentView({
 
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 dark:bg-red-950/50">
+              <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-800">{highRisk}</p>
+              <p className="text-2xl font-bold text-foreground">{highRisk}</p>
               <p className="text-sm text-muted-foreground">
                 High Risk (&ge;80%) Submission{highRisk !== 1 ? "s" : ""}
               </p>
@@ -1290,12 +1290,12 @@ export function AssignmentView({
         </Card>
       </div>
 
-      <div className="rounded-xl border bg-white shadow-sm">
+      <div className="rounded-xl border bg-card shadow-sm">
         <div className="flex items-center justify-between px-6 py-5">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800">
+            <h2 className="text-lg font-semibold text-foreground">
               Submissions —{" "}
-              <span className="text-slate-500">{assignment.title}</span>
+              <span className="text-muted-foreground">{assignment.title}</span>
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {submissions.length} submission

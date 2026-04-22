@@ -79,11 +79,11 @@ const SECTIONS = [
 
 export default function TermsPage() {
   return (
-    <main className="relative min-h-screen bg-white">
+    <main className="relative min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-6 pt-6">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-none"
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-5 py-2.5 text-sm font-medium text-foreground shadow-sm transition-all duration-200 hover:bg-muted hover:shadow-none"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to home
@@ -91,30 +91,30 @@ export default function TermsPage() {
       </div>
 
       <section className="mx-auto max-w-3xl px-6 pb-10 pt-10 text-center">
-        <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
-          <ScrollText className="h-5 w-5 text-slate-700" strokeWidth={1.5} />
+        <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted shadow-sm">
+          <ScrollText className="h-5 w-5 text-foreground" strokeWidth={1.5} />
         </div>
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
+        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
           Terms &amp; Conditions
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-slate-500">
+        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
           Welcome to our Code Plagiarism Detection Service. By using our
           services, you agree to the following terms and conditions.
         </p>
         <div className="mx-auto mt-8 flex items-center justify-center gap-3">
-          <div className="h-px w-12 bg-slate-200" />
+          <div className="h-px w-12 bg-border" />
           <div className="h-1.5 w-1.5 rounded-full bg-[#d40f0d]" />
-          <div className="h-px w-12 bg-slate-200" />
+          <div className="h-px w-12 bg-border" />
         </div>
       </section>
 
       {/* Sections */}
       <section className="mx-auto max-w-3xl px-6 pb-20">
-        <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="divide-y divide-border rounded-2xl border border-border bg-card shadow-sm">
           {SECTIONS.map((section) => (
             <div
               key={section.number}
-              className="group px-8 py-7 transition-colors duration-150 hover:bg-slate-50/70"
+              className="group px-8 py-7 transition-colors duration-150 hover:bg-muted/40"
             >
               <div className="flex items-start gap-5">
                 {/* Number badge */}
@@ -123,10 +123,10 @@ export default function TermsPage() {
                 </span>
 
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-base font-bold text-slate-800">
+                  <h2 className="text-base font-bold text-foreground">
                     {section.title}
                   </h2>
-                  <div className="mt-3 text-sm leading-relaxed text-slate-500 [&_li]:mt-2 [&_li]:flex [&_li]:items-start [&_li]:gap-2.5 [&_li]:before:mt-1.5 [&_li]:before:h-1.5 [&_li]:before:w-1.5 [&_li]:before:shrink-0 [&_li]:before:rounded-full [&_li]:before:bg-[#d40f0d]/50 [&_p]:text-slate-500 [&_ul]:space-y-0.5">
+                  <div className="mt-3 text-sm leading-relaxed text-muted-foreground [&_li]:mt-2 [&_li]:flex [&_li]:items-start [&_li]:gap-2.5 [&_li]:before:mt-1.5 [&_li]:before:h-1.5 [&_li]:before:w-1.5 [&_li]:before:shrink-0 [&_li]:before:rounded-full [&_li]:before:bg-[#d40f0d]/50 [&_p]:text-muted-foreground [&_ul]:space-y-0.5">
                     {section.content}
                   </div>
                 </div>
@@ -136,12 +136,12 @@ export default function TermsPage() {
         </div>
 
         {/* Footer note */}
-        <div className="mt-10 rounded-xl border border-slate-200 bg-slate-50 px-8 py-6 text-center">
-          <p className="text-sm text-slate-500">
+        <div className="mt-10 rounded-xl border border-border bg-muted/40 px-8 py-6 text-center">
+          <p className="text-sm text-muted-foreground">
             If you have any questions about these terms,{" "}
             <a
               href="#"
-              className="font-semibold text-slate-800 underline underline-offset-2 transition-colors hover:text-[#d40f0d]"
+              className="font-semibold text-foreground underline underline-offset-2 transition-colors hover:text-[#d40f0d]"
             >
               please contact us
             </a>
