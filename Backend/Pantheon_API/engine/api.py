@@ -353,6 +353,14 @@ def compare(
         full_a_lines = full_source_a.splitlines()
         full_b_lines = full_source_b.splitlines()
 
+        # floor_a / floor_b track the global line that is one past the end of
+        # the most recently finalised block on each side.  The upward-extension
+        # walk must not cross this boundary; otherwise two adjacent blocks would
+        # claim the same lines and produce inconsistent click-to-scroll
+        # behaviour on the frontend.
+        floor_a: int = 1
+        floor_b: int = 1
+
         for block in evidence:
             off_a = file_offsets_a.get(block.get("file_a", ""), 0)
             off_b = file_offsets_b.get(block.get("file_b", ""), 0)
@@ -366,7 +374,8 @@ def compare(
             # long as the lines immediately above are also identical in both submissions.
             # This recovers function signatures and class headers that were copied verbatim
             # but sit just above the k-gram matching threshold.
-            while a1 > 1 and b1 > 1:
+            # Clamped to floor_a / floor_b so we never overlap the previous block.
+            while a1 > floor_a and b1 > floor_b:
                 la = full_a_lines[a1 - 2].strip()
                 lb = full_b_lines[b1 - 2].strip()
                 if la and lb and la == lb:
@@ -376,6 +385,10 @@ def compare(
                     break
             block["lines_a"] = [a1, a2]
             block["lines_b"] = [b1, b2]
+
+            # Advance the floor so the next block cannot extend into this one.
+            floor_a = a2 + 1
+            floor_b = b2 + 1
 
             block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
@@ -395,6 +408,7 @@ def compare(
                 for l in block.get("line_highlights_b", [])
                 if 1 <= l <= local_b2
             ]
+
 
         # If the submissions are essentially identical (>=95% similarity score), replace
         # all the individual matched blocks with a single block covering the entire
