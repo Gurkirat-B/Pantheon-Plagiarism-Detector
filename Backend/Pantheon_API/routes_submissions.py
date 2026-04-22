@@ -349,6 +349,50 @@ def get_boilerplate(
         "files": inner_names,
     }
 
+@router.delete("/boilerplate/{assignment_id}")
+def delete_boilerplate(
+    assignment_id: UUID,
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] != "professor":
+        raise HTTPException(status_code=403, detail="Only professors can delete boilerplate")
+
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT ab.boilerplate_id, ab.artifact_id, a.s3_bucket, a.s3_key
+            FROM assignment_boilerplate ab
+            JOIN artifacts a ON a.artifact_id = ab.artifact_id
+            JOIN repositories r ON r.assignment_id = ab.assignment_id
+            WHERE ab.assignment_id = %s
+              AND r.owner_id = %s
+            """,
+            (str(assignment_id), str(user["user_id"])),
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="No boilerplate found for this assignment")
+
+        boilerplate_id, artifact_id, bucket, key = row
+
+        conn.execute(
+            "DELETE FROM assignment_boilerplate WHERE boilerplate_id = %s",
+            (str(boilerplate_id),),
+        )
+        conn.execute(
+            "DELETE FROM artifacts WHERE artifact_id = %s",
+            (str(artifact_id),),
+        )
+        conn.commit()
+
+    _delete_s3_object_if_exists(bucket, key)
+
+    return {
+        "assignment_id": str(assignment_id),
+        "boilerplate_id": str(boilerplate_id),
+        "message": "Boilerplate deleted successfully",
+    }
+
 @router.get("/{assignment_id}/export")
 def export_submissions(
     assignment_id: UUID,
