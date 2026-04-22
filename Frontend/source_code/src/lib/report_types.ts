@@ -58,21 +58,40 @@ type RawMatchInput = {
   index?: unknown;
   linesA?: unknown;
   linesB?: unknown;
+  lineHighlightsA?: unknown;
+  lineHighlightsB?: unknown;
   severity?: unknown;
 };
 
 function mapMatch(raw: RawMatchInput, idx: number): CodeMatch {
   const linesA = Array.isArray(raw.linesA) ? (raw.linesA as number[]) : [];
   const linesB = Array.isArray(raw.linesB) ? (raw.linesB as number[]) : [];
+
+  // Prefer the engine's curated highlight list (only meaningful code lines —
+  // blanks, lone-brace lines, and comment-only lines are excluded by the engine).
+  // Fall back to a full range expansion only for older API responses that
+  // pre-date the lineHighlights fields.
+  const rawHighlightsA = Array.isArray(raw.lineHighlightsA)
+    ? (raw.lineHighlightsA as number[])
+    : [];
+  const rawHighlightsB = Array.isArray(raw.lineHighlightsB)
+    ? (raw.lineHighlightsB as number[])
+    : [];
+
+  const highlightsA =
+    rawHighlightsA.length > 0 ? rawHighlightsA : expandLineRange(linesA);
+  const highlightsB =
+    rawHighlightsB.length > 0 ? rawHighlightsB : expandLineRange(linesB);
+
   return {
     index: Number(raw.index ?? idx),
     severity: (raw.severity as MatchSeverity) ?? "LOW",
     fileA: String(raw.fileA ?? ""),
     linesA: formatLineRange(linesA),
-    lineHighlightsA: expandLineRange(linesA),
+    lineHighlightsA: highlightsA,
     fileB: String(raw.fileB ?? ""),
     linesB: formatLineRange(linesB),
-    lineHighlightsB: expandLineRange(linesB),
+    lineHighlightsB: highlightsB,
     codeA: String(raw.codeA ?? ""),
     codeB: String(raw.codeB ?? ""),
   };

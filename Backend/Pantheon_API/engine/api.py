@@ -380,10 +380,21 @@ def compare(
             block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
 
-            block["line_highlights_a"] = [l + off_a for l in block.get("line_highlights_a", [])
-                                          if a1 <= l + off_a <= a2]
-            block["line_highlights_b"] = [l + off_b for l in block.get("line_highlights_b", [])
-                                          if b1 <= l + off_b <= b2]
+            # Convert local line numbers (1-based within each file) to global
+            # concatenated-source line numbers.  The clamp must use local
+            # coordinates: compare `l` against the local range, then shift.
+            local_a2 = a2 - off_a   # upper bound in local coords
+            local_b2 = b2 - off_b
+            block["line_highlights_a"] = [
+                l + off_a
+                for l in block.get("line_highlights_a", [])
+                if 1 <= l <= local_a2
+            ]
+            block["line_highlights_b"] = [
+                l + off_b
+                for l in block.get("line_highlights_b", [])
+                if 1 <= l <= local_b2
+            ]
 
         # If the submissions are essentially identical (>=95% similarity score), replace
         # all the individual matched blocks with a single block covering the entire
