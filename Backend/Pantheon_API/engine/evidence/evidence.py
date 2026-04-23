@@ -316,12 +316,21 @@ def build_evidence(
     return evidence_blocks
 
 
+def _ast_match_strength(sim: float) -> str:
+    """Rate a method-pair match by its AST structural similarity score."""
+    if sim >= 0.70:
+        return "high"
+    if sim >= 0.45:
+        return "medium"
+    return "low"
+
+
 def build_ast_evidence(
     methods_a: Dict[str, dict],
     methods_b: Dict[str, dict],
     function_map_a: Dict[str, dict],
     function_map_b: Dict[str, dict],
-    similarity_threshold: float = 0.70,
+    similarity_threshold: float = 0.25,
 ) -> List[dict]:
     """
     Build evidence blocks from AST method-pair matches.
@@ -332,6 +341,11 @@ def build_ast_evidence(
     so they can be fed directly into api.py's _merge_evidence() and
     _deduplicate_evidence_1to1() without any special handling.
 
+    Threshold is 0.25 — low enough to catch obfuscated copies where renaming
+    and literal changes reduce apparent similarity. Match strength is tiered by
+    the actual AST similarity score (not token count) so the report accurately
+    reflects how structurally similar the matched methods are.
+
     Args:
         methods_a:        Per-method SubtreeHashes dict for submission A
                           (from engine.ast.method_match.per_method_hashes).
@@ -340,7 +354,6 @@ def build_ast_evidence(
                           (maps func_name → {start_line, end_line, ...}).
         function_map_b:   Same for B.
         similarity_threshold: Minimum similarity to include a pair as evidence.
-                              0.70 is conservative (avoids noise from short helpers).
 
     Returns:
         List of evidence block dicts with evidence_source="ast_method_pair".
@@ -422,7 +435,7 @@ def build_ast_evidence(
             "lines_b":           [b1, b2],
             "code_b":            "",
             "line_highlights_b": [],
-            "match_strength":    _match_strength(token_count),
+            "match_strength":    _ast_match_strength(sim),
             "tokens_matched":    token_count,
             "evidence_source":   "ast_method_pair",
             "ast_similarity":    round(sim, 4),

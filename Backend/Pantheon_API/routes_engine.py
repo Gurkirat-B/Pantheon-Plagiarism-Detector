@@ -366,15 +366,23 @@ def compare_all(
             for pair in batch_result["pairs"]:
                 a_id = pair["submission_a"]
                 b_id = pair["submission_b"]
+                report = pair_reports.get((a_id, b_id))
+                # Use the full compare score (AST + k-gram + PDG) so the stored
+                # score matches the evidence JSON. Fall back to batch score only
+                # if the full compare failed for this pair.
+                score = (
+                    report["similarityScore"] / 100.0
+                    if report
+                    else pair["score"]
+                )
                 result_row = conn.execute(
                     """
                     INSERT INTO similarity_results (run_id, score, left_submission_id, right_submission_id)
                     VALUES (%s, %s, %s, %s)
                     RETURNING result_id
                     """,
-                    (run_id, pair["score"], a_id, b_id),
+                    (run_id, score, a_id, b_id),
                 ).fetchone()
-                report = pair_reports.get((a_id, b_id))
                 if report:
                     conn.execute(
                         "INSERT INTO similarity_evidence (result_id, evidence_json) VALUES (%s, %s::jsonb)",
@@ -400,7 +408,11 @@ def compare_all(
                 {
                     "submission_a": p["submission_a"],
                     "submission_b": p["submission_b"],
-                    "score": p["score"],
+                    "score": (
+                        pair_reports[(p["submission_a"], p["submission_b"])]["similarityScore"] / 100.0
+                        if (p["submission_a"], p["submission_b"]) in pair_reports
+                        else p["score"]
+                    ),
                     "language_detected": p["language_detected"],
                 }
                 for p in batch_result["pairs"]

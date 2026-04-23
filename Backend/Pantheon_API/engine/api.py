@@ -62,27 +62,52 @@ _K_SHORT = 8
 _W_SHORT = 4
 
 
-def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str = "mixed"):
+def _process_submission(
+    path: Union[str, Path],
+    work_dir: Path,
+    lang_hint: str = "mixed",
+    template_sources: Optional[dict] = None,
+):
     """
-    Runs the full preparation pipeline on one submission: ingests files, cleans
-    them, converts to fingerprints, and now also runs AST Phase 1 to build the
-    function boundary map that Phase 2A and 2B both need.
+    Runs the full preparation pipeline on one submission.
+
+    Two-track template handling (when template_sources is provided):
+      Analysis track  — boilerplate lines blanked before tokenization,
+                        fingerprinting, and scoring, so they contribute
+                        nothing to similarity signals.
+      Display track   — original file content saved before blanking and
+                        restored afterward, so full-code view shows the
+                        student's real submission including boilerplate.
+
+    AST and PDG always use the original source text (tree-sitter needs
+    valid syntax), so they read from restored files after analysis.
     """
     path = Path(path)
     _, detected_lang, source_files = ingest_to_dir(path, work_dir)
     lang = detected_lang if detected_lang != "mixed" else lang_hint
 
-    canon = canonicalize(source_files, work_dir, lang=lang)
+    # ── Save originals before any blanking ──
+    originals: dict = {}
+    for f in source_files:
+        try:
+            originals[f.name] = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
+    # ── Phase 0: blank boilerplate in-place for the analysis track ──
+    if template_sources:
+        _blank_template_in_files(source_files, template_sources)
+
+    # ── Canonicalize + tokenize on blanked text ──
+    canon   = canonicalize(source_files, work_dir, lang=lang)
     fp_text = blank_output_boilerplate(canon.canonical_text, lang)
 
     tok_norm = tokenize(fp_text, lang=lang,
                         normalize_ids=True, normalize_literals=True,
                         normalize_access=True)
-
-    tok_raw = tokenize(fp_text, lang=lang,
-                       normalize_ids=False, normalize_literals=False,
-                       normalize_access=False)
+    tok_raw  = tokenize(fp_text, lang=lang,
+                        normalize_ids=False, normalize_literals=False,
+                        normalize_access=False)
 
     tok_norm = tok_norm[:50000]
     tok_raw  = tok_raw[:50000]
@@ -95,48 +120,50 @@ def _process_submission(path: Union[str, Path], work_dir: Path, lang_hint: str =
     fp_full  = build_fingerprints(tok_norm, k=12)
     fp_short = build_fingerprints(tok_norm, k=_K_SHORT)
 
-    # ── Phase 1: AST parse — build function boundary map and call graph ──
-    # parse_submission reads the original source files (before canonicalization)
-    # so it sees real identifiers, not normalized tokens. This is intentional:
-    # tree-sitter needs real syntax, not our token stream.
+    # ── Phase 1: AST parse on blanked files ──
+    # The blanked files are still syntactically valid (braces and structure are
+    # preserved, only non-trivial boilerplate content lines are emptied).
+    # Parsing on blanked files means boilerplate functions contribute nothing to
+    # method_hashes or subtree_hashes — no separate post-parse filter needed.
+    # Originals are restored only after all analysis, purely for display.
     ast_result = parse_submission(source_files, lang)
 
-    # ── Per-function adaptive k fingerprints (Phase 2A Pass 1) ──
-    # Built here alongside the other fingerprints so the result dict is complete.
     fp_per_func = build_per_function_fingerprints(
         tok_norm, ast_result["functions"]
     ) if ast_result["parse_ok"] else {}
 
-    # ── Subtree hashes for Phase 2B ──
-    # Use the original source files (same as parse_submission) so tree-sitter
-    # gets valid syntax. Canonical text strips too many constructs for C/C++
-    # and causes parse_ok=False, producing empty hash sets and a zero AST score.
-    raw_src = "\n".join(
+    blanked_src = "\n".join(
         p.read_text(encoding="utf-8", errors="replace")
         for p in source_files if p.is_file()
     )
-    subtree_hashes = compute_subtree_hashes(raw_src, lang)
+    subtree_hashes = compute_subtree_hashes(blanked_src, lang)
+    method_hashes  = per_method_hashes(blanked_src, lang)
 
-    # ── Per-method hashes for Phase 2B method-pair matching ──
-    method_hashes = per_method_hashes(raw_src, lang)
+    # ── Restore originals for display only ──
+    # Full code view must show the student's actual submission including boilerplate.
+    for f in source_files:
+        orig = originals.get(f.name)
+        if orig is not None:
+            try:
+                f.write_text(orig, encoding="utf-8")
+            except Exception:
+                pass
 
     return {
-        "lang":          lang,
-        "canon":         canon,
-        "tok_norm":      tok_norm,
-        "tok_raw":       tok_raw,
-        "fp":            fp,
-        "fp_full":       fp_full,
-        "fp_short":      fp_short,
-        "dyn_k":         dyn_k,
-        "dyn_w":         dyn_w,
-        # Phase 1 outputs
-        "ast_result":    ast_result,       # {functions, call_graph, parse_ok}
-        "fp_per_func":   fp_per_func,      # per-function fingerprints
-        # Phase 2B inputs
-        "subtree_hashes": subtree_hashes,  # SubtreeHashes object
-        "method_hashes":  method_hashes,   # {func_name: SubtreeHashes}
-        "source_files":   source_files,    # original Path list for PDG
+        "lang":           lang,
+        "canon":          canon,
+        "tok_norm":       tok_norm,
+        "tok_raw":        tok_raw,
+        "fp":             fp,
+        "fp_full":        fp_full,
+        "fp_short":       fp_short,
+        "dyn_k":          dyn_k,
+        "dyn_w":          dyn_w,
+        "ast_result":     ast_result,
+        "fp_per_func":    fp_per_func,
+        "subtree_hashes": subtree_hashes,
+        "method_hashes":  method_hashes,
+        "source_files":   source_files,
     }
 
 
@@ -173,18 +200,34 @@ def compare(
         dir_a = workdir / "A"
         dir_b = workdir / "B"
 
-        proc_a = _process_submission(submission_a_path, dir_a)
-        proc_b = _process_submission(submission_b_path, dir_b)
+        # Phase 0: extract template sources so boilerplate can be blanked at the
+        # source level before ANY tokenization, fingerprinting, or AST work runs.
+        template_sources = None
+        if template_path:
+            template_sources = _load_template_sources(template_path, workdir / "template")
+
+        proc_a = _process_submission(submission_a_path, dir_a, template_sources=template_sources)
+        proc_b = _process_submission(submission_b_path, dir_b, template_sources=template_sources)
 
         lang = proc_a["lang"] if proc_a["lang"] == proc_b["lang"] else "mixed"
 
+        # Strip boilerplate methods and subtrees from AST signals so they never
+        # appear in evidence blocks or inflate scores. K-gram is already clean
+        # (blanked at source level). AST needs this post-parse filter because
+        # Build the boilerplate line set for the upward-walk guard and the post-walk
+        # safety filter. AST and k-gram are already clean at this point — boilerplate
+        # was blanked in _process_submission before any analysis ran.
+        _bp_lines: set = set()
+        if template_sources:
+            _bp_trivial = {"{", "}", "};", "*/", "*", "/*", "//"}
+            for _content in template_sources.values():
+                for _line in _content.splitlines():
+                    s = _line.strip()
+                    if s and s not in _bp_trivial:
+                        _bp_lines.add(s)
+
         fp_a = proc_a["fp"]
         fp_b = proc_b["fp"]
-
-        if template_path:
-            template_fp = _get_template_fingerprints(template_path, workdir / "template")
-            fp_a = _subtract_fingerprints(fp_a, template_fp)
-            fp_b = _subtract_fingerprints(proc_b["fp"], template_fp)
 
         # ── Phase 2A + 2B: run in parallel ──
         # Both phases depend on Phase 1 (ast_result), which is already done inside
@@ -263,12 +306,14 @@ def compare(
             scores["weighted_final"] = final
             pdg_triggered = True
 
-        # ── Evidence building ──
-        # Keep merge gaps small. A gap of 20 was absorbing entire neighbouring
-        # methods into one block when only one method actually matched, producing
-        # wildly asymmetric A/B regions. The upward walk below already recovers
-        # function signatures above the matched region, so a large merge gap is
-        # not needed for that purpose.
+        # ── Evidence building — sequential layered pipeline ──
+        #
+        # LAYER 1: AST (primary signal, structurally resistant to renaming/literals)
+        # LAYER 2: K-gram global (verification + gap-filling)
+        # LAYER 3: PDG (score modifier, already applied above)
+        #
+        # Each layer feeds into the next. AST is primary — k-gram fills what AST misses.
+
         if final >= 0.90:
             merge_gap = 6
         elif final >= 0.70:
@@ -276,8 +321,27 @@ def compare(
         else:
             merge_gap = 2
 
-        # Primary k-gram evidence pass (k=12)
-        evidence = build_evidence(
+        # ── LAYER 1: AST evidence (threshold=0.25, tiered by similarity) ──
+        evidence_ast = build_ast_evidence(
+            methods_a=proc_a["method_hashes"],
+            methods_b=proc_b["method_hashes"],
+            function_map_a=proc_a["ast_result"]["functions"],
+            function_map_b=proc_b["ast_result"]["functions"],
+        )
+
+        # Within-block k-gram verification: upgrade strength one level when the
+        # per-function fingerprints also share hashes (double confirmation).
+        for block in evidence_ast:
+            if _kgram_confirms_ast_block(block, proc_a["fp_per_func"], proc_b["fp_per_func"]):
+                curr = block.get("match_strength", "low")
+                if curr == "low":
+                    block["match_strength"] = "medium"
+                elif curr == "medium":
+                    block["match_strength"] = "high"
+
+        # ── LAYER 2: K-gram global — fills gaps AST missed ──
+        # Primary pass (k=12)
+        evidence_kgram = build_evidence(
             proc_a["fp_full"], proc_b["fp_full"],
             tok_a=proc_a["tok_norm"],
             tok_b=proc_b["tok_norm"],
@@ -290,7 +354,7 @@ def compare(
             lang=lang, evidence_source="kgram",
         )
 
-        # Short-method pass (k=5)
+        # Short-method pass (k=8) — catches small helper functions
         evidence_short = build_evidence(
             proc_a["fp_short"], proc_b["fp_short"],
             tok_a=proc_a["tok_norm"],
@@ -304,7 +368,7 @@ def compare(
             lang=lang, evidence_source="kgram_short",
         )
 
-        # Loop-normalized pass
+        # Loop-normalized pass — catches loop-type-swap obfuscation
         tok_loop_a = _normalize_loops(proc_a["tok_norm"])
         tok_loop_b = _normalize_loops(proc_b["tok_norm"])
         fp_loop_a  = build_fingerprints(tok_loop_a, k=12)
@@ -321,18 +385,10 @@ def compare(
             lang=lang, evidence_source="kgram_loop",
         )
 
-        # AST method-pair evidence (Phase 2B)
-        evidence_ast = build_ast_evidence(
-            methods_a=proc_a["method_hashes"],
-            methods_b=proc_b["method_hashes"],
-            function_map_a=proc_a["ast_result"]["functions"],
-            function_map_b=proc_b["ast_result"]["functions"],
-        )
-
-        # Merge all four evidence sources then deduplicate
-        evidence = _merge_evidence(evidence,       evidence_loop)
-        evidence = _merge_evidence(evidence,       evidence_short)
-        evidence = _merge_evidence(evidence,       evidence_ast)
+        # Merge: AST is primary, each k-gram pass fills unclaimed gaps
+        evidence = _merge_evidence(evidence_ast,   evidence_kgram)
+        evidence = _merge_evidence(evidence,        evidence_short)
+        evidence = _merge_evidence(evidence,        evidence_loop)
         evidence = _deduplicate_evidence_1to1(evidence)
 
         obfuscation_flags = detect_obfuscation(
@@ -380,6 +436,9 @@ def compare(
         evidence.sort(key=lambda b: b["lines_a"][0])
 
         # Pass 2: upward extension walk + fill code + recompute highlights.
+        # _bp_lines (built above) doubles as the walk guard: the walk must not cross
+        # into lines that appear verbatim in the boilerplate — those lines are identical
+        # in every student submission and pass the la == lb check spuriously.
         # floor_a/floor_b track one past the end of the last finalised block so
         # the walk never lets two adjacent blocks claim the same lines.
         floor_a: int = 1
@@ -395,7 +454,7 @@ def compare(
             while a1 > floor_a and b1 > floor_b and a1 > 1 and b1 > 1:
                 la = full_a_lines[a1 - 2].strip()
                 lb = full_b_lines[b1 - 2].strip()
-                if la and lb and la == lb:
+                if la and lb and la == lb and la not in _bp_lines:
                     a1 -= 1
                     b1 -= 1
                 else:
@@ -409,13 +468,15 @@ def compare(
             block["code_a"] = "\n".join(full_a_lines[a1 - 1:a2])
             block["code_b"] = "\n".join(full_b_lines[b1 - 1:b2])
 
-            # Recompute highlights from the final global line range. This handles
-            # three cases correctly: AST blocks (start with empty highlights),
-            # k-gram blocks extended upward by the walk (new lines had no highlights),
-            # and any coordinate mismatch from the old local→global transform.
+            # Recompute highlights from the final global line range.
             block["line_highlights_a"] = _highlight_lines(full_a_lines, a1, a2, lang)
             block["line_highlights_b"] = _highlight_lines(full_b_lines, b1, b2, lang)
 
+        # Final boilerplate filter: drop blocks where both sides consist of >50%
+        # boilerplate lines. Run after the walk so code_a/code_b are fully populated.
+        # This catches cases where source-level blanking missed a section (e.g., the
+        # student renamed a function) or where the AST filter's 0.85 threshold was
+        # too strict (e.g., boilerplate stub with similarity just under threshold).
         # Re-sort by strength for the final report now that line-order processing
         # is complete.
         _strength_order = {"high": 0, "medium": 1, "low": 2}
@@ -597,9 +658,9 @@ def batch_analyze(
         workdir = Path(workdir)
         workdir.mkdir(parents=True, exist_ok=True)
 
-    template_fp = {}
+    template_sources = None
     if template_path:
-        template_fp = _get_template_fingerprints(template_path, workdir / "template")
+        template_sources = _load_template_sources(template_path, workdir / "template")
 
     processed = {}
     errors = {}
@@ -609,10 +670,7 @@ def batch_analyze(
         path   = sub["path"]
         work   = workdir / f"sub_{sub_id}"
         try:
-            result = _process_submission(path, work)
-            if template_fp:
-                result["fp"]       = _subtract_fingerprints(result["fp"],       template_fp)
-                result["fp_short"] = _subtract_fingerprints(result["fp_short"], template_fp)
+            result = _process_submission(path, work, template_sources=template_sources)
             return sub_id, result, None
         except Exception as e:
             return sub_id, None, str(e)
@@ -626,6 +684,9 @@ def batch_analyze(
                 processed[sub_id] = result
             else:
                 errors[sub_id] = err
+
+    # Boilerplate is already excluded: _process_submission blanked it before
+    # tokenization and AST parsing, so processed results are clean.
 
     student_map = {}
     group_map = {}
@@ -666,7 +727,14 @@ def batch_analyze(
             if pa["lang"] != pb["lang"] and "mixed" not in (pa["lang"], pb["lang"]):
                 continue
 
-            scores = weighted_score(pa["fp"], pb["fp"], tok_a=pa["tok_norm"], tok_b=pb["tok_norm"])
+            ast_sub   = subtree_similarity(pa["subtree_hashes"], pb["subtree_hashes"])
+            meth_pair = best_match_score(pa["method_hashes"],  pb["method_hashes"])
+            scores = weighted_score(
+                pa["fp"], pb["fp"],
+                tok_a=pa["tok_norm"], tok_b=pb["tok_norm"],
+                ast_subtree_similarity=ast_sub,
+                method_pair_match=meth_pair,
+            )
             lang = pa["lang"] if pa["lang"] == pb["lang"] else "mixed"
 
             pairs.append({
@@ -687,6 +755,37 @@ def batch_analyze(
         "pairs":          pairs,
         "preprocessing_errors": errors if errors else None,
     }
+
+
+def _kgram_confirms_ast_block(
+    block: dict,
+    fp_per_func_a: dict,
+    fp_per_func_b: dict,
+) -> bool:
+    """
+    Returns True if the per-function k-gram fingerprints for the matched method
+    pair share at least one hash, confirming the AST structural match at the
+    token level. Used as a second layer of evidence for each AST block.
+    """
+    method_a = block.get("method_a", "")
+    method_b = block.get("method_b", "")
+    if not method_a or not method_b:
+        return False
+
+    fp_a = fp_per_func_a.get(method_a)
+    if fp_a is None:
+        short_a = method_a.split("::")[-1]
+        fp_a = next((v for k, v in fp_per_func_a.items() if k.split("::")[-1] == short_a), None)
+
+    fp_b = fp_per_func_b.get(method_b)
+    if fp_b is None:
+        short_b = method_b.split("::")[-1]
+        fp_b = next((v for k, v in fp_per_func_b.items() if k.split("::")[-1] == short_b), None)
+
+    if not fp_a or not fp_b:
+        return False
+
+    return bool(set(fp_a.keys()) & set(fp_b.keys()))
 
 
 def _merge_evidence(primary: list, supplementary: list) -> list:
@@ -850,18 +949,64 @@ def _build_full_source(original_sources: dict) -> tuple:
     return "".join(parts), offsets
 
 
-def _get_template_fingerprints(template_path: Union[str, Path], work_dir: Path) -> dict:
+def _load_template_sources(template_path: Union[str, Path], work_dir: Path) -> dict:
     """
-    Processes the instructor's template file through the same pipeline as a
-    student submission and returns its fingerprints. These are then subtracted
-    from both submissions so that starter code everyone copies from the handout
-    doesn't contribute to the similarity score.
+    Extracts the instructor's template submission and returns its source files
+    as {filename: content}. Used by _blank_template_in_files() to remove
+    boilerplate before any tokenization or fingerprinting happens.
     """
+    work_dir.mkdir(parents=True, exist_ok=True)
     try:
-        proc = _process_submission(template_path, work_dir)
-        return proc["fp"]
+        _, _, source_files = ingest_to_dir(Path(template_path), work_dir)
+        result = {}
+        for f in source_files:
+            try:
+                result[f.name] = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+        return result
     except Exception:
         return {}
+
+
+def _blank_template_in_files(source_files: list, template_sources: dict) -> None:
+    """
+    Blank every line in each student file that appears verbatim in the boilerplate.
+    No similarity, no thresholds — if the line is in the boilerplate, it is blanked.
+    Line numbers are preserved so all downstream coordinate systems remain accurate.
+    Structural lines (braces) are kept so the AST parser sees valid syntax.
+    """
+    _trivial = {"{", "}", "};", "*/", "*", "/*", "//"}
+
+    # Build a flat set of every non-trivial line that exists in the boilerplate,
+    # across all boilerplate files regardless of filename.
+    bp_line_set: set = set()
+    for content in template_sources.values():
+        for line in content.splitlines():
+            s = line.strip()
+            if s and s not in _trivial:
+                bp_line_set.add(s)
+
+    if not bp_line_set:
+        return
+
+    for f in source_files:
+        try:
+            student = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        lines = student.splitlines(keepends=False)
+        cleaned = [
+            "" if line.strip() in bp_line_set else line
+            for line in lines
+        ]
+
+        if cleaned != lines:
+            try:
+                f.write_text("\n".join(cleaned), encoding="utf-8")
+            except Exception:
+                pass
 
 
 def _load_original_sources(work_dir: Path, source_map) -> dict:
