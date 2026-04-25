@@ -135,20 +135,20 @@ export function FileUploadDialog({
 
         {successData ? (
           <div className="flex flex-col items-center gap-5 py-4 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
-              <CheckCircle2 className="h-9 w-9 text-emerald-600" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/40">
+              <CheckCircle2 className="h-9 w-9 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div className="space-y-1.5">
               <h2 className="text-xl font-bold">Upload Successful!</h2>
             </div>
-            <div className="w-full divide-y rounded-lg border bg-slate-50">
+            <div className="w-full divide-y rounded-lg border bg-muted/40">
               {successData.details.map(({ label, value }) => (
                 <div
                   key={label}
                   className="flex items-center justify-between px-4 py-3"
                 >
                   <span className="text-sm text-muted-foreground">{label}</span>
-                  <span className="text-sm font-semibold text-slate-800">
+                  <span className="text-sm font-semibold text-foreground">
                     {value}
                   </span>
                 </div>

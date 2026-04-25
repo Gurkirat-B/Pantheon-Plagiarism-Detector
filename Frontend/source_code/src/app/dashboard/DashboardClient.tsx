@@ -83,9 +83,9 @@ function AssignmentRow({
   onDelete: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-white px-5 py-4 transition-colors hover:bg-slate-50">
+    <div className="flex items-center justify-between rounded-lg border bg-card px-5 py-4 transition-colors hover:bg-muted/40">
       <div>
-        <p className="font-medium text-slate-800">{assignment.title}</p>
+        <p className="font-medium text-foreground">{assignment.title}</p>
         <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="h-3.5 w-3.5" />
@@ -534,7 +534,7 @@ export function DashboardClient({
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 min-[2000px]:max-w-[2000px]">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
           Dashboard
         </h1>
         <p className="mt-1 text-muted-foreground">
@@ -545,7 +545,7 @@ export function DashboardClient({
       {/* Courses header */}
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">Your Courses</h2>
+          <h2 className="text-lg font-semibold text-foreground">Your Courses</h2>
           <p className="text-sm text-muted-foreground">
             {courses.length} course{courses.length !== 1 ? "s" : ""}
           </p>
@@ -569,8 +569,8 @@ export function DashboardClient({
               onClick={() => handleSelectCourse(course.course_id)}
               className={`group relative cursor-pointer transition-all duration-200 hover:shadow-md ${
                 isSelected
-                  ? "border-2 border-slate-800 shadow-md"
-                  : "border hover:border-slate-300"
+                  ? "border-2 border-foreground shadow-md"
+                  : "border hover:border-border"
               }`}
             >
               <div
@@ -607,7 +607,7 @@ export function DashboardClient({
               </div>
 
               <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold text-slate-800">
+                <CardTitle className="text-base font-semibold text-foreground">
                   {course.name}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
@@ -637,12 +637,12 @@ export function DashboardClient({
 
       {/* Assignments Section */}
       {selectedCourse && (
-        <div className="mt-8 rounded-xl border bg-white shadow-sm">
+        <div className="mt-8 rounded-xl border bg-card shadow-sm">
           <div className="flex items-center justify-between px-6 py-5">
             <div>
-              <h2 className="text-lg font-semibold text-slate-800">
+              <h2 className="text-lg font-semibold text-foreground">
                 Assignments —{" "}
-                <span className="text-slate-500">{selectedCourse.name}</span>
+                <span className="text-muted-foreground">{selectedCourse.name}</span>
               </h2>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {selectedCourse.assignments?.length ?? 0} assignment

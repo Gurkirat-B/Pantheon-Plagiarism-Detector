@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { User, Mail, KeyRound, Trash2, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { User, KeyRound, Trash2, ShieldCheck } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -31,129 +35,33 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/LoadingButton";
+import { PasswordInput } from "@/components/ui/password-input";
+import { toast } from "@/hooks/use-toast";
+import { changePasswordFormSchema } from "@/components/forms/formSchema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type DialogType = "email" | "password" | "delete" | null;
+type DialogType = "password" | "delete" | null;
 
 interface AccountButtonProps {
   name: string;
   email: string;
 }
 
-// ─── Shared field wrapper ─────────────────────────────────────────────────────
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium text-slate-700">{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-// ─── Change Email Dialog ──────────────────────────────────────────────────────
-
-function ChangeEmailDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [newEmail, setNewEmail] = useState("");
-  const [confirmEmail, setConfirmEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const mismatch = confirmEmail.length > 0 && newEmail !== confirmEmail;
-  const canSubmit = newEmail.length > 0 && newEmail === confirmEmail;
-
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setLoading(true);
-    // TODO: wire to API
-    await new Promise((r) => setTimeout(r, 800));
-    console.log("Change email submitted:", { newEmail });
-    setLoading(false);
-    onOpenChange(false);
-  };
-
-  const handleCancel = () => {
-    setNewEmail("");
-    setConfirmEmail("");
-    onOpenChange(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-            <Mail className="h-4 w-4 text-slate-600" />
-          </div>
-          <DialogTitle className="text-lg">Change email address</DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Your new email will be used for sign-in and notifications.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-1">
-          <Field label="New email address">
-            <Input
-              type="email"
-              placeholder="you@example.com"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-            />
-          </Field>
-          <Field label="Confirm new email">
-            <Input
-              type="email"
-              placeholder="you@example.com"
-              value={confirmEmail}
-              onChange={(e) => setConfirmEmail(e.target.value)}
-              className={
-                mismatch
-                  ? "border-destructive focus-visible:ring-destructive"
-                  : ""
-              }
-            />
-            {mismatch && (
-              <p className="text-xs text-destructive">
-                Email addresses do not match.
-              </p>
-            )}
-          </Field>
-        </div>
-
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={handleCancel}>
-            Cancel
-          </Button>
-          <LoadingButton
-            loading={loading}
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
-            Save email
-          </LoadingButton>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Change Password Dialog ───────────────────────────────────────────────────
+
+type ChangePasswordValues = z.infer<typeof changePasswordFormSchema>;
 
 function ChangePasswordDialog({
   open,
@@ -162,98 +70,128 @@ function ChangePasswordDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [loading, setLoading] = useState(false);
+  const form = useForm<ChangePasswordValues>({
+    resolver: zodResolver(changePasswordFormSchema),
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
 
-  const mismatch = confirm.length > 0 && next !== confirm;
-  const canSubmit = current.length > 0 && next.length >= 8 && next === confirm;
+  const isSubmitting = form.formState.isSubmitting;
 
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setLoading(true);
-    // TODO: wire to API
-    await new Promise((r) => setTimeout(r, 800));
-    console.log("Change password submitted");
-    setLoading(false);
-    onOpenChange(false);
+  const onSubmit = async (data: ChangePasswordValues) => {
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: data.currentPassword,
+          new_password: data.newPassword,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        form.setError("root", {
+          message: json.message ?? "Failed to change password.",
+        });
+        return;
+      }
+      onOpenChange(false);
+      toast({
+        title: "Password changed",
+        description: "Your password has been updated successfully.",
+      });
+    } catch {
+      form.setError("root", {
+        message: "Something went wrong. Please try again.",
+      });
+    }
   };
 
-  const handleCancel = () => {
-    setCurrent("");
-    setNext("");
-    setConfirm("");
-    onOpenChange(false);
+  const handleClose = (val: boolean) => {
+    if (!val) form.reset();
+    onOpenChange(val);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-            <KeyRound className="h-4 w-4 text-slate-600" />
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
           </div>
           <DialogTitle className="text-lg">Change password</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Choose a strong password with at least 8 characters.
+            Choose a strong password with at least 6 characters, including
+            uppercase, lowercase, and a number.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          <Field label="Current password">
-            <Input
-              type="password"
-              placeholder="••••••••"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-            />
-          </Field>
-          <Field label="New password">
-            <Input
-              type="password"
-              placeholder="••••••••"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-            />
-            {next.length > 0 && next.length < 8 && (
-              <p className="text-xs text-muted-foreground">
-                At least 8 characters required.
-              </p>
-            )}
-          </Field>
-          <Field label="Confirm new password">
-            <Input
-              type="password"
-              placeholder="••••••••"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className={
-                mismatch
-                  ? "border-destructive focus-visible:ring-destructive"
-                  : ""
-              }
-            />
-            {mismatch && (
-              <p className="text-xs text-destructive">
-                Passwords do not match.
-              </p>
-            )}
-          </Field>
-        </div>
-
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={handleCancel}>
-            Cancel
-          </Button>
-          <LoadingButton
-            loading={loading}
-            onClick={handleSubmit}
-            disabled={!canSubmit}
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-4 py-1"
           >
-            Save password
-          </LoadingButton>
-        </DialogFooter>
+            <FormField
+              control={form.control}
+              name="currentPassword"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Current password</FormLabel>
+                  <FormControl>
+                    <PasswordInput placeholder="••••••••" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="newPassword"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>New password</FormLabel>
+                  <FormControl>
+                    <PasswordInput placeholder="••••••••" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="confirmPassword"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Confirm new password</FormLabel>
+                  <FormControl>
+                    <PasswordInput placeholder="••••••••" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {form.formState.errors.root && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.root.message}
+              </p>
+            )}
+            <DialogFooter className="gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleClose(false)}
+              >
+                Cancel
+              </Button>
+              <LoadingButton loading={isSubmitting} type="submit">
+                Save password
+              </LoadingButton>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
@@ -268,24 +206,44 @@ function DeleteAccountDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const router = useRouter();
   const CONFIRM_PHRASE = "delete my account";
   const [input, setInput] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const canSubmit = input === CONFIRM_PHRASE;
+  const canSubmit = input === CONFIRM_PHRASE && password.length > 0;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setLoading(true);
-    // TODO: wire to API
-    await new Promise((r) => setTimeout(r, 800));
-    console.log("Delete account confirmed");
-    setLoading(false);
-    onOpenChange(false);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/delete-account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message ?? "Failed to delete account.");
+        return;
+      }
+      onOpenChange(false);
+      router.push("/");
+      router.refresh();
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancel = () => {
     setInput("");
+    setPassword("");
+    setError("");
     onOpenChange(false);
   };
 
@@ -293,7 +251,7 @@ function DeleteAccountDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-red-50">
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40">
             <Trash2 className="h-4 w-4 text-destructive" />
           </div>
           <AlertDialogTitle className="text-lg">
@@ -303,16 +261,16 @@ function DeleteAccountDialog({
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>
                 This will{" "}
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-foreground">
                   permanently delete
                 </span>{" "}
                 your account, all your courses, and all associated submissions.
                 This action{" "}
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-foreground">
                   cannot be undone.
                 </span>
               </p>
-              <div className="rounded-md border border-destructive/20 bg-red-50/60 px-3 py-2.5">
+              <div className="rounded-md border border-destructive/20 bg-red-50/60 px-3 py-2.5 dark:bg-red-950/30">
                 <p className="text-xs font-medium text-destructive">
                   Type{" "}
                   <span className="select-none font-mono font-semibold">
@@ -325,12 +283,19 @@ function DeleteAccountDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <Input
-          placeholder={CONFIRM_PHRASE}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          className="mt-1"
-        />
+        <div className="space-y-3">
+          <Input
+            placeholder={CONFIRM_PHRASE}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+          />
+          <PasswordInput
+            placeholder="Current password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
 
         <AlertDialogFooter className="gap-2">
           <AlertDialogCancel onClick={handleCancel}>Cancel</AlertDialogCancel>
@@ -367,7 +332,7 @@ export function AccountButton({ name, email }: AccountButtonProps) {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="flex h-9 items-center gap-2.5 border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-100 hover:shadow-none"
+            className="flex h-9 items-center gap-2.5 border border-border bg-muted/40 text-sm font-medium text-foreground shadow-sm transition-all hover:bg-muted hover:shadow-none"
           >
             {/* Avatar circle */}
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold tracking-wide text-white">
@@ -385,7 +350,7 @@ export function AccountButton({ name, email }: AccountButtonProps) {
                 {initials}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-800">
+                <p className="truncate text-sm font-semibold text-foreground">
                   {name || "Professor"}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -393,9 +358,9 @@ export function AccountButton({ name, email }: AccountButtonProps) {
                 </p>
               </div>
             </div>
-            <div className="mt-2.5 flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              <span className="text-xs text-slate-500">Professor account</span>
+            <div className="mt-2.5 flex items-center gap-1.5 rounded-md bg-muted px-2 py-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Professor account</span>
             </div>
           </div>
 
@@ -404,23 +369,16 @@ export function AccountButton({ name, email }: AccountButtonProps) {
           {/* Account details submenu */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="gap-2 px-3 py-2 text-sm">
-              <User className="h-4 w-4 text-slate-500" />
+              <User className="h-4 w-4 text-muted-foreground" />
               Account details
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>
               <DropdownMenuSubContent className="w-52" sideOffset={6}>
                 <DropdownMenuItem
                   className="gap-2 px-3 py-2 text-sm"
-                  onClick={() => setActiveDialog("email")}
-                >
-                  <Mail className="h-4 w-4 text-slate-500" />
-                  Change email
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2 px-3 py-2 text-sm"
                   onClick={() => setActiveDialog("password")}
                 >
-                  <KeyRound className="h-4 w-4 text-slate-500" />
+                  <KeyRound className="h-4 w-4 text-muted-foreground" />
                   Change password
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -438,10 +396,6 @@ export function AccountButton({ name, email }: AccountButtonProps) {
       </DropdownMenu>
 
       {/* Dialogs — mounted outside the dropdown so they survive its unmount */}
-      <ChangeEmailDialog
-        open={activeDialog === "email"}
-        onOpenChange={(open) => !open && setActiveDialog(null)}
-      />
       <ChangePasswordDialog
         open={activeDialog === "password"}
         onOpenChange={(open) => !open && setActiveDialog(null)}

@@ -3,13 +3,13 @@ import { ArrowLeft } from "lucide-react";
 
 export default function ComingSoonPage() {
   return (
-    <main className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden bg-white px-6">
+    <main className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden bg-background px-6">
       {/* Subtle grid texture */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.03]"
         style={{
           backgroundImage:
-            "linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)",
+            "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)",
           backgroundSize: "48px 48px",
         }}
       />
@@ -21,29 +21,29 @@ export default function ComingSoonPage() {
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center text-center">
         {/* Eyebrow */}
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3.5 py-1.5">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#d40f0d]" />
-          <span className="text-xs font-medium uppercase tracking-widest text-slate-500">
+          <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             In progress
           </span>
         </div>
 
         {/* Headline */}
-        <h1 className="text-[clamp(3.5rem,12vw,9rem)] font-bold leading-none tracking-tighter text-slate-900">
+        <h1 className="text-[clamp(3.5rem,12vw,9rem)] font-bold leading-none tracking-tighter text-foreground">
           Coming
           <br />
           <span className="text-[#d40f0d]">Soon</span>
         </h1>
 
         {/* Sub-copy */}
-        <p className="mt-8 max-w-sm text-base text-slate-500">
+        <p className="mt-8 max-w-sm text-base text-muted-foreground">
           This page is still being built. Check back later — it&apos;ll be worth it.
         </p>
 
         {/* Back link */}
         <Link
           href="/"
-          className="mt-10 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-none"
+          className="mt-10 inline-flex items-center gap-2 rounded-full border border-border bg-background px-5 py-2.5 text-sm font-medium text-foreground shadow-sm transition-all duration-200 hover:bg-muted hover:shadow-none"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to home
@@ -52,11 +52,11 @@ export default function ComingSoonPage() {
 
       {/* Bottom rule */}
       <div className="absolute bottom-10 left-1/2 flex -translate-x-1/2 items-center gap-3">
-        <div className="h-px w-16 bg-slate-200" />
-        <span className="text-xs font-semibold uppercase tracking-widest text-slate-300">
+        <div className="h-px w-16 bg-border" />
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
           Pantheon
         </span>
-        <div className="h-px w-16 bg-slate-200" />
+        <div className="h-px w-16 bg-border" />
       </div>
     </main>
   );

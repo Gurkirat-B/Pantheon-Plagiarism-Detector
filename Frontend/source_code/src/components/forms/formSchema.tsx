@@ -34,4 +34,15 @@ const signUpFormSchema = z
     message: "Passwords do not match.",
   });
 
-export { loginFormSchema, signUpFormSchema };
+const changePasswordFormSchema = z
+  .object({
+    currentPassword: z.string().min(1, { message: "Current password is required." }),
+    newPassword: registerPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match.",
+  });
+
+export { loginFormSchema, signUpFormSchema, changePasswordFormSchema };

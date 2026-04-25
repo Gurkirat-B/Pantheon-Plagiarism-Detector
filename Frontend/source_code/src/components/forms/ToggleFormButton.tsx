@@ -25,14 +25,14 @@ export default function ToggleFormButton({
     >
       <ToggleGroupItem
         value="student"
-        className="flex items-center gap-2 !rounded-lg !px-5 py-2 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+        className="flex items-center gap-2 !rounded-lg !px-5 py-2 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
       >
         <GraduationCap className="h-4 w-4" />
         Student
       </ToggleGroupItem>
       <ToggleGroupItem
         value="instructor"
-        className="flex items-center gap-2 !rounded-lg !px-5 py-2 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=on]:bg-white data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+        className="flex items-center gap-2 !rounded-lg !px-5 py-2 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
       >
         <CircleUserRound className="h-4 w-4" />
         Instructor

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { LogoutButton } from "./LogoutButton";
 import { AccountButton } from "./AccountButton";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 
 export default async function Navbar() {
   const cookieStore = await cookies();
@@ -41,7 +42,7 @@ export default async function Navbar() {
   }
 
   return (
-    <header className="border-b border-slate-200 bg-background">
+    <header className="border-b border-border bg-background">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 p-5 min-[2000px]:max-w-[2000px]">
         <div className="flex items-center gap-5">
           <Link href="/" className="flex items-start gap-3">
@@ -49,12 +50,18 @@ export default async function Navbar() {
               <img
                 src="/logo.png"
                 alt="Pantheon Logo"
-                className="h-12 w-auto"
+                className="h-12 w-auto dark:hidden"
+              />
+              <img
+                src="/logo-white.png"
+                alt="Pantheon Logo"
+                className="hidden h-12 w-auto dark:block"
               />
             </div>
           </Link>
         </div>
-        <div className="flex items-center justify-center gap-5">
+        <div className="flex items-center justify-center gap-2">
+          <ThemeSwitcher />
           {isLoggedIn && isProfessor && (
             <AccountButton name={professorName} email={professorEmail} />
           )}
