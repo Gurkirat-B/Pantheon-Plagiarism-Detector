@@ -1,21 +1,23 @@
 April 6, 2026
 
 General
-- Went over testing
-- Talked about submission files
-- Everyone needs to learn how the ENGINE / BACKEND / FRONTEND work for the meeting
-- Work on the slideshow on PowerPoint
+- Reviewed testing progress and discussed overall system validation
+- Discussed required submission files and project deliverables
+- Emphasized that all team members should understand the ENGINE, BACKEND, and FRONTEND for the upcoming meeting/demo
+- Continued working on the presentation slideshow in Microsoft PowerPoint
+- Discussed roles and responsibilities for final testing and presentation
 
 
 UI
-- Removed change email from Prof View
-- Fixed customer support page
-- connect api to prof change password and delete account
+- Removed “change email” functionality from the professor view
+- Fixed issues on the customer support page
+- Connected API endpoints to professor features (change password and delete account)
+- Improved UI consistency across account management features
 
 
 Backend
-- Add api to change password / delete account DONE
-- Security 
-- Fixed the issue with the student submission name
-- Add backend to show the boilerplate code for UI
-- Change session ID back to a single session ID
+- Added API endpoints for changing password and deleting accounts
+- Continued implementing and reviewing security features
+- Fixed issue related to student submission naming
+- Added backend support to display boilerplate code in the UI
+- Fixed session handling by reverting to a single session ID
