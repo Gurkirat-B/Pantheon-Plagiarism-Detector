@@ -1,9 +1,12 @@
 April 13, 2026
 
-General 
-- Started working on the presentation slide show
-  - Talked about who's doing what slides
-  - Talked about the order of the presentation
-- Went over the BACKEND / ENGINE / FRONTEND security
-- Wrapping up the coding aspect of the project
-- Updating github weekly notes to make it more detailed 
+General
+
+- Began working on the final presentation slide deck
+  - Discussed slides and assigned sections to each team member
+  - Finalized the overall order and flow of the presentation
+- Reviewed security considerations across the backend, engine, and frontend components
+- Continued wrapping up the coding phase of the project and addressing remaining issues
+- Updated GitHub weekly notes to be more detailed and reflective of current progress
+- Discussed secure handling of user data, including login credentials and submissions
+- Discussed minor UI/UX improvements before final submission
