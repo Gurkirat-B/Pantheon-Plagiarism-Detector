@@ -6,10 +6,7 @@ Feb 26, 2026 Meeting notes
 - Emailing Dave about competitive marking 
 - Created the engine blueprint, which is below
 
-Engine Blueprint
-1) Define what “engine” owns vs what the “app” owns
-
-Engine responsibilities (your focus):
+Engine responsibilities:
 	•	Validate assignment key for submissions (accept/reject).
 	•	Build a representation of each submission:
 	•	concatenate source files
@@ -21,32 +18,10 @@ Engine responsibilities (your focus):
 	•	evidence (matched regions/line ranges)
 	•	Store results tied to course + assignment + run.
 
-App/UI responsibilities (thin wrapper):
+App/UI responsibilities:
 	•	Instructor login + clicks buttons
 	•	Displays results
 	•	Calls engine API
-
-No student login needed → students only interact via “submit with key”.
-
-⸻
-
-2) Model the workflow as objects first (multi-course + multi-assignment)
-
-Minimum entities you should support:
-	•	Instructor
-	•	Course (e.g., COSC 4P02)
-	•	Assignment (A1, A2, etc.)
-	•	AssignmentKey (private “join key” per assignment)
-	•	Submission (belongs to an assignment; created with valid key)
-	•	Repository (where code is stored / committed snapshot)
-	•	AnalysisRun (a “test run” the instructor triggers)
-	•	ComparisonResult (score + evidence)
-
-This automatically supports “multiple courses” and “separate key per assignment”.
-
-⸻
-
-3) Implement the key system early (it controls everything)
 
 How it should behave
 	•	Instructor creates an assignment → engine generates a private key.
@@ -55,88 +30,3 @@ How it should behave
 	•	key belongs to that assignment
 	•	key is active (not revoked/expired, optional)
 	•	If key is fake/duplicate/invalid → reject.
-
-Implementation detail (simple + strong)
-	•	Store only a hash of the key (not the key itself).
-	•	On submission, hash the provided key and compare.
-
-This is a “security-ish” feature you can explain well in your documentation.
-
-⸻
-
-4) Repository + “commit when testing” (Agile-friendly interpretation)
-
-What your prof is describing is basically: submissions are snapshots, and analysis runs operate on snapshots.
-
-So define:
-	•	A commit = a frozen version of an assignment repository at the moment you run detection.
-	•	When instructor triggers “Run plagiarism check” → engine creates an AnalysisRun tied to the latest commit (or selected commit).
-
-Agile vocabulary you can use (accurately):
-	•	User story: “As an instructor, I want to generate an assignment key so only my students can submit.”
-	•	Increment: implement key validation + basic ingestion first.
-	•	Definition of Done: submission accepted only with valid key; stored; canonicalized; ready for analysis.
-
-⸻
-
-5) Canonicalization step (your prof’s “concatenate + strip comments”)
-
-This becomes your pre-processing pipeline:
-
-For each submission:
-	1.	Collect all source files that match allowed extensions for that assignment.
-	2.	Sort files deterministically (e.g., alphabetical path order).
-	3.	Concatenate into one canonical string with clear separators, e.g.:
-	•	// ===== FILE: path/to/X.java ===== (but note: you’ll strip comments—so make separator a non-comment delimiter like \n<<<FILE:path>>>\n)
-	4.	Strip comments using language-aware rules.
-	5.	Normalize whitespace (optional but recommended).
-	6.	Output a single canonical “document” that goes to tokenization.
-
-This is a huge win because it:
-	•	standardizes multi-file projects
-	•	reduces “noise”
-	•	simplifies comparison
-
-⸻
-
-6) Tokenize (C/C++/Java) → fingerprint → compare
-
-After canonicalization, the rest is consistent across languages:
-	•	Tokenize into: keywords / identifiers / operators / literals / separators
-	•	Optionally normalize identifiers and literals
-	•	Build token k-grams → hashes/fingerprints
-	•	Compute similarity:
-	•	quick score (Jaccard on fingerprint sets)
-	•	then evidence mapping for pairs above threshold
-
-This is your “engine core.”
-
-⸻
-
-7) Support “ad-hoc” vs “full batch” runs
-
-You’ll want two analysis modes:
-
-Ad-hoc compare
-	•	Instructor selects two submissions (or uploads two files)
-	•	Engine returns score + evidence immediately
-
-Batch run
-	•	Instructor triggers run for an assignment
-	•	Engine compares:
-	•	all-vs-all within that assignment repository snapshot
-	•	Outputs a ranked list of suspicious pairs
-
-This matches what profs actually do.
-
-⸻
-
-8) Your “own API” endpoints (minimal but complete)
-
-Even if you don’t build the full web app, define the engine interface like this:
-	•	POST /courses
-	•	POST /assignments → returns assignment_id + generated key (one-time display)
-	•	POST /submissions (requires assignment_key)
-	•	POST /analysis-runs (assignment_id + commit_id/latest)
-	•	GET /analysis-runs/{id}/results
-	•	POST /compare (ad-hoc: submission A vs B)
