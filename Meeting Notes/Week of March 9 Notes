@@ -1,18 +1,19 @@
 March 9, 2026
 
 - Booked next week's rooms
-- Talked about Claude AI and if it is beneficial for assisting
 - Started putting together the backend with the frontend and engine
 - started officially working on the live demo for the showing
-- The documentation guys have started working on the updated SRS for stage 2
-- Went over the current code and talked about the students having their own login vs before students didn't have a login
-- Went over how the engine works and confirmed the student comparison worked
+- Documentation team started updating the SRS for Stage 2
+- Reviewed current code and discussed implementing student login (previously no login system)
+- Reviewed how the engine works and confirmed student comparison functionality is working
 - Talked about handling edge cases in code comparison (similar structure, different variable names, etc.)
 - Outlined next steps for preparing the system for the upcoming project demonstration
 - Reviewed login workflow and basic authentication requirements for student accounts
 - Confirmed responsibilities between the development team and documentation team for Stage 2 deliverables
 - Planned how the meeting with Dave Bockus will go
+- Confirmed progress aligns with project timeline
 
 March 12, 2026
 - Met in person, finished the demo and got all the functionalities working 
 - Fine-tuned certain tasks for better accuracy
+- Fixed minor bugs discovered during testing
