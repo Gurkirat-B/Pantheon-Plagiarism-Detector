@@ -40,6 +40,9 @@ class DeleteAccountRequest(BaseModel):
 
 
 def register_user(conn, name, email, role, password=None):
+    """
+    Helper method to register a user
+    """
     hashed_password = hash_password(password) if password else None
     row = conn.execute(
         """
@@ -54,6 +57,10 @@ def register_user(conn, name, email, role, password=None):
 
 @router.post("/register")
 def register(body: RegisterRequest):
+    """
+    Registers a professor based on a JSON request
+    Hashes password before storing in database
+    """
     hashed_password = hash_password(body.password)
     with get_db_connection() as conn:
         # Check if email already exists
@@ -84,6 +91,10 @@ def register(body: RegisterRequest):
 
 @router.post("/login")
 def login(body: LoginRequest):
+    """
+    Login for existing users based on JSON request
+    Students are automatically registered if there is no existing user for that student
+    """
     with get_db_connection() as conn:
         #check if email exists
         row = conn.execute(

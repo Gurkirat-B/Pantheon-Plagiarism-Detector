@@ -61,10 +61,16 @@ def _delete_s3_object_if_exists(bucket: str, key: str) -> None:
 
 @router.get("/repo/uploads/{assignment_id}")
 def get_uploads(assignment_id: UUID, user: dict = Depends(get_current_user)):
+    """
+    Returns all upload details for a professor repo
+    Requires professor role
+    """
+
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can view repository uploads")
 
     with get_db_connection() as conn:
+        # query database for all uploads to the professor repo
         rows = conn.execute(
             """
             SELECT ru.upload_id, ru.filename, ru.uploaded_at
@@ -89,6 +95,10 @@ async def upload_to_repo(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
+    """
+    Uploads a .zip of .zip files to a professors personal repository
+    Requires professor role
+    """
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can upload to a repository")
 
@@ -223,6 +233,10 @@ async def upload_boilerplate(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
+    """
+    Uploads a boilerplate code file to a specific assignment
+    Requires professor role
+    """
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can upload boilerplate")
 
@@ -237,6 +251,7 @@ async def upload_boilerplate(
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid .zip archive")
 
     with get_db_connection() as conn:
+        # find professors repo
         repo = conn.execute(
             """
             SELECT repository_id FROM repositories
@@ -247,11 +262,12 @@ async def upload_boilerplate(
 
     if not repo:
         raise HTTPException(status_code=404, detail="No repository found for this assignment")
-
+    # set up s3 key for upload
     repository_id = repo[0]
     filename = file.filename
     s3_key = f"repositories/{repository_id}/{filename}"
 
+    # upload to s3
     try:
         s3.put_object(
             Bucket=S3_BUCKET,
@@ -262,6 +278,7 @@ async def upload_boilerplate(
     except ClientError as e:
         raise HTTPException(status_code=502, detail=f"Failed to upload boilerplate to S3: {e}")
 
+    # update database tables after s3 upload is confirmed
     with get_db_connection() as conn:
         artifact_row = conn.execute(
             """
@@ -306,9 +323,13 @@ def get_boilerplate(
     assignment_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Returns details of a boilerplate upload for an assignment
+    """
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can view boilerplate")
 
+    # query database for boilerplate code
     with get_db_connection() as conn:
         row = conn.execute(
             """
@@ -354,6 +375,9 @@ def delete_boilerplate(
     assignment_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Deletes boilerplate code for a specific assignment
+    """
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can delete boilerplate")
 
@@ -398,10 +422,15 @@ def export_submissions(
     assignment_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Returns a download link for all submissions within a specific assignment
+    Requires professor role 
+    """
     if user["role"] != "professor":
         raise HTTPException(status_code=403, detail="Only professors can export submissions")
 
     with get_db_connection() as conn:
+        # queries database for all submission emails and s3 pointers to submissions
         rows = conn.execute(
             """
             SELECT u.email, a.s3_bucket, a.s3_key
@@ -462,6 +491,9 @@ async def upload_submission(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
+    """
+    Uploads a student submission to s3 and creates a database record
+    """
     # check file type
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are allowed")

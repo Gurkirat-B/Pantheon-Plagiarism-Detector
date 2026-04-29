@@ -33,6 +33,7 @@ class SupportedLanguage(str, Enum):
     cpp = "cpp"
     c = "c"
 
+# Request model for creating an assignment
 class CreateAssignmentRequest(BaseModel):
     course_id: UUID
     title: str
@@ -47,6 +48,10 @@ class EditAssignmentRequest(BaseModel):
 
 @router.post("/")
 def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_current_user)):
+    """
+    Creates an assignment based on the users JSON request.
+    Reserved for professors only
+    """
     _require_professor(user)
 
     allowed_languages = {"java", "c", "cpp"}
@@ -107,6 +112,9 @@ def create_assignment(body: CreateAssignmentRequest, user: dict = Depends(get_cu
 
 @router.get("/{assignment_id}/student")
 def get_assignment_student(assignment_id: UUID):
+    """
+    Gets assignment details that will be shown to the student
+    """
     with get_db_connection() as conn:
         row = conn.execute(
             """
@@ -132,6 +140,9 @@ def get_assignment_student(assignment_id: UUID):
 
 @router.get("/{assignment_id}")
 def get_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
+    """
+    Gets assignment details that will be shown to the professor
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:
@@ -238,6 +249,9 @@ def edit_assignment(
 
 @router.delete("/{assignment_id}")
 def delete_assignment(assignment_id: UUID, user: dict = Depends(get_current_user)):
+    """
+    Deletes an assignment, can only be accessed by professors
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:

@@ -38,8 +38,13 @@ def _require_professor(user: dict):
     
 @router.get("/assignments/{assignment_id}/submissions")
 def list_submissions(assignment_id: UUID, user: dict = Depends(get_current_user)):
+    """
+    Lists all submissions for an assignment for frontend to display
+    Requires professor role
+    """
     _require_professor(user)
     with get_db_connection() as conn:
+        # query database for all submissions and details for a specific assignment
         rows = conn.execute(
             """
             SELECT s.submission_id, s.user_id, u.email,
@@ -74,8 +79,13 @@ def download_submission(
     submission_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Returns a download link that downloads a single submission from an assignment
+    Requires professor role
+    """
     _require_professor(user)
     with get_db_connection() as conn:
+        # get s3 details for the submission
         row = conn.execute(
             """
             SELECT a.s3_bucket, a.s3_key
@@ -89,6 +99,7 @@ def download_submission(
     if not row or not row[0] or not row[1]:
         raise HTTPException(status_code=404, detail="Submission or artifact not found")
     
+    # generate link
     url = s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": row[0], "Key": row[1]},
@@ -102,6 +113,10 @@ def compare_two_submissions(
     body: CompareSubmissionsRequest,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Runs the engine on the 2 selected submissions from the JSON request and saves results in the database
+    Requires professor role
+    """
     _require_professor(user)
 
     if body.submission_a_id == body.submission_b_id:
@@ -257,6 +272,10 @@ def compare_all(
     assignment_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Compares all submissions within an assignment to eachother
+    Requires professor role
+    """
     _require_professor(user)
 
     # 1) fetch all submissions with artifacts for this assignment
@@ -435,6 +454,10 @@ def compare_repo(
     assignment_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Compares all submissions to all of the professors personal repository uploads for this assignment
+    Requires professor role
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:
@@ -613,6 +636,10 @@ def get_similarity_report_student(
     submission_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Returns student-student similarity reports for a specific submission
+    Requires professor role
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:
@@ -639,6 +666,10 @@ def get_similarity_report_repo(
     submission_id: UUID,
     user: dict = Depends(get_current_user),
 ):
+    """
+    Returns student-repo similarity reports for a specific submission
+    Requires professor role
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:

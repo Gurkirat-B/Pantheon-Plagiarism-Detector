@@ -23,12 +23,16 @@ class EditCourseRequest(BaseModel):
     code: str
     name: str
 
-
 @router.post("/")
 def create_course(body: CreateCourseRequest, user: dict = Depends(get_current_user)):
+    """
+    Creates a course based on a JSON request
+    Requires professor role
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:
+        # check if course already exists
         existing = conn.execute(
             "SELECT course_id FROM courses WHERE code = %s",
             (body.code,)
@@ -37,6 +41,7 @@ def create_course(body: CreateCourseRequest, user: dict = Depends(get_current_us
         if existing:
             raise HTTPException(status_code=409, detail="Course code already exists")
 
+        # insert course into databse
         row = conn.execute(
             """
             INSERT INTO courses (code, name)
@@ -69,8 +74,13 @@ def create_course(body: CreateCourseRequest, user: dict = Depends(get_current_us
 
 @router.get("/")
 def list_courses(user: dict = Depends(get_current_user)):
+    """
+    Lists all courses with details for frontend to display
+    Requires professor role
+    """
     _require_professor(user)
 
+    # query databse for all courses with details specific to the current professor
     with get_db_connection() as conn:
         rows = conn.execute(
             """
@@ -97,9 +107,15 @@ def list_courses(user: dict = Depends(get_current_user)):
 
 @router.get("/{course_id}")
 def get_course(course_id: UUID, user: dict = Depends(get_current_user)):
+    """
+    Gets all details of a course including related assignments for frontend to display
+    Requires professor role 
+    """
     _require_professor(user)
 
+    
     with get_db_connection() as conn:
+        # check if course exists, raise error if not
         course = conn.execute(
             """
             SELECT course_id, code, name
@@ -112,6 +128,7 @@ def get_course(course_id: UUID, user: dict = Depends(get_current_user)):
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
 
+        # query all assignments with details for the specified course
         assignments = conn.execute(
             """
             SELECT assignment_id, title, language, due_date, created_at
@@ -141,6 +158,10 @@ def get_course(course_id: UUID, user: dict = Depends(get_current_user)):
 
 @router.put("/{course_id}")
 def edit_course(course_id: UUID, body: EditCourseRequest, user: dict = Depends(get_current_user)):
+    """
+    Edits a course based on the JSON request
+    Requires professor role
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:
@@ -187,9 +208,14 @@ def edit_course(course_id: UUID, body: EditCourseRequest, user: dict = Depends(g
 
 @router.delete("/{course_id}")
 def delete_course(course_id: UUID, user: dict = Depends(get_current_user)):
+    """
+    Deletes a course
+    Requires professor role
+    """
     _require_professor(user)
 
     with get_db_connection() as conn:
+        # check if course exists
         row = conn.execute(
             "SELECT course_id FROM courses WHERE course_id = %s",
             (str(course_id),)
