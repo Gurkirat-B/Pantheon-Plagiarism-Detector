@@ -1,12 +1,12 @@
 March 16, 2026
 
-- Tested the demo / continue working on it
-- Went over the SRS document as a group to prepare to hand in the second version
-- Prepared for the meeting with Dave
-- Created a talking list point
-- Stress tested the website
-- Hosted the website online
+- Tested the demo and continued wokring on functionality
+- Reviewed the SRS document as a group in order to submit the second version
+- Prepared for the upcoming meeting with Dave
+  - Created a  list of talking points for the meeting and demo
+- Did stress testing on the website to evaluate performance under load
+- Deployed and hosted the website online for testing
 - Created test suite for stage 2
-- Fixed engine erros
-- Fixed UI errors
+- Fixed errors within the comparison engine
+- Fixed UI-related errors and improved stability
 - Went over the demo as a group to confirm everything and check what we need for after the demo
