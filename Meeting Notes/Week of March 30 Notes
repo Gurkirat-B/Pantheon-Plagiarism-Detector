@@ -4,48 +4,49 @@ March 30, 2026
 
 General
   - Booked the following week's meeting
-  - Went over the Project stage 3 document
+  - Reviewed the Project Stage 3 document
   - Booked final presentation date
-  - Continued marking off the list for things to do
+  - Continued progressing through and completing task checklist
+  - Reviewed overall system readiness for final stages
 
 
 - Engine
-  - Fine-tune the similarity metrics DONE 
-  - Removing cross-code comparisons DONE
-  - Work on the template provided by prof strip that DONE
-  - work on multiple submissions within the .ZIP file DONE
-  - Strip student name and email from every submission DONE
-  - Working on line colour choices DONE
-
+  - Fine-tuned similarity metrics 
+  - Removed cross-code comparisons 
+  - Stripped template/boilerplate code provided by professor 
+  - Added support for multiple submissions within a .ZIP file 
+  - Stripped student name and email from all submissions 
+  - Finalized line colour choices for similarity highlighting 
+  - Improved accuracy and consistency of similarity detection
 
 Backend
-  - Boilerplate code DONE
-  - Professor repo comparisons DONE
-  - Cleaning DONE
-  - Security 
-  - Adding course change API DONE 
-  - Add logic to not add an assignment for an old date DONE
-  - Comparisons for previous year submissions DONE
-  - Add api for course change names DONE
-  - Remove assignments/course/{course_id} api DONE
-  - fix the language selector so it works DONE
-  - Add api to get course detail like course name, assignment, and prof name DONE
-  - Add api to download repo to our computer DOWN
-  - Add api to get name names of the boilerplate code and repo DONE
-  - Add api to change email / password / delete account 
+  - Implemented boilerplate code handling
+  - Added professor repository comparison functionality
+  - Cleaned backend code
+  - Continued working on security features 
+  - Adding course change API
+  - Added validation to prevent assignments with past dates
+  - Enabled comparisons for previous year submissions
+  - Add api for course change names
+  - Remove assignments/course/{course_id} api
+  - Fixed language selector functionality
+  - Added API to retrieve course details (course name, assignments, professor name)
+  - Added API to download repository locally
+  - Added API to retrieve names of boilerplate code and repository files
+  - Added APIs for account management (change email/password/delete account)
 
 
 UI
-  - Compare all screens DONE
-  - Cleaning DONE
-  - Testing all links DONE
-  - Working on line colour choices DONE
-  - Adding Compare with button to compare with the repo and the corresponding screens DONE
-  - Add boilerplate button DONE
-  - Made mock-up for boilerplate button DONE
-  - Made mock-up for compare with repo and import repo buttons DONE
-  - Made UI mock-up for the download repo to computer button DONE
-  - Add help UI button which would show a pop up video on how to use the software 
+  - Completed “Compare All” screens
+  - Cleaned and refined UI components
+  - Testing all links
+  - Working on line colour choices
+  - Added “Compare with Repo” functionality and corresponding screens
+  - Add boilerplate button
+  - Created mockups for boilerplate button
+  - Created mockups for “Compare with Repo” and “Import Repo” buttons
+  - Created UI mockup for “Download Repo to Computer” button
+  - Added help button with popup instructional video (REMOVED IDEA)
 
 
 Meeting with Dave
